@@ -1002,6 +1002,37 @@ table tfoot th {
     box-shadow: var(--shadow-card);
 }
 
+.pos-barcode-scan {
+    padding: 12px;
+    border: 1px solid var(--primary-100);
+    border-radius: var(--radius-md);
+    background: var(--primary-50);
+}
+
+.pos-barcode-field label {
+    margin-bottom: 7px;
+}
+
+.pos-barcode-entry {
+    display: flex;
+    gap: 8px;
+}
+
+.pos-barcode-entry input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    letter-spacing: 0.03em;
+}
+
+.pos-barcode-entry .button {
+    flex: 0 0 auto;
+}
+
+.pos-barcode-field .input-hint {
+    margin-bottom: 0;
+}
+
 .pos-search-wrapper {
     position: relative;
     width: 100%;
@@ -2316,5 +2347,86 @@ table tfoot th {
     .receipt-subnote {
         color: #333 !important;
         font-size: 7.5pt !important;
+    }
+}
+
+@media print and (max-width: 600px) {
+    .receipt-items {
+        display: block !important;
+        table-layout: auto !important;
+    }
+
+    .receipt-items thead {
+        display: none !important;
+    }
+
+    .receipt-items tbody,
+    .receipt-items tfoot {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .receipt-items tbody tr {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        padding: 3px 0 !important;
+        border-bottom: 1px dotted #999 !important;
+    }
+
+    .receipt-items tbody tr:last-child {
+        border-bottom: 1px solid #000 !important;
+    }
+
+    .receipt-items tbody td {
+        display: flex !important;
+        width: auto !important;
+        min-width: 0 !important;
+        justify-content: space-between !important;
+        gap: 4px !important;
+        padding: 3px 2px !important;
+        border: 0 !important;
+        text-align: right !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    .receipt-items tbody td:first-child {
+        grid-column: 1 / -1 !important;
+        justify-content: flex-start !important;
+        padding-bottom: 4px !important;
+        text-align: left !important;
+    }
+
+    .receipt-items tbody td:not(:first-child)::before {
+        content: attr(data-label) !important;
+        flex: 0 0 auto;
+        margin-right: auto;
+        color: #444 !important;
+        font-size: 7pt !important;
+        font-weight: 400 !important;
+        text-align: left !important;
+    }
+
+    .receipt-items tfoot tr {
+        display: flex !important;
+        width: 100% !important;
+    }
+
+    .receipt-items tfoot th {
+        display: block !important;
+        padding: 6px 2px !important;
+        white-space: normal !important;
+    }
+
+    .receipt-items tfoot .receipt-grand-label {
+        flex: 1 1 auto !important;
+        text-align: left !important;
+    }
+
+    .receipt-items tfoot .receipt-grand-total {
+        flex: 0 0 auto !important;
+        padding-left: 4px !important;
+        font-size: 9pt !important;
+        white-space: nowrap !important;
     }
 }

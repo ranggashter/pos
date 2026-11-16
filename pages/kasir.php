@@ -41,6 +41,7 @@ $formState['uang_diterima'] = is_scalar($formState['uang_diterima'] ?? null)
     ? (string) $formState['uang_diterima']
     : '';
 $formErrors = [];
+$barcodeValue = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isValidCsrfToken($_POST['csrf_token'] ?? null)) {
@@ -57,6 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         : '';
     $postedCash = isset($_POST['uang_diterima']) && is_string($_POST['uang_diterima'])
         ? trim($_POST['uang_diterima'])
+        : '';
+    $barcodeValue = isset($_POST['kode_barcode']) && is_string($_POST['kode_barcode'])
+        ? trim($_POST['kode_barcode'])
         : '';
     $formState = [
         'id_pelanggan' => $postedCustomer,
@@ -169,6 +173,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (PDOException $exception) {
                 error_log('Tambah cepat gagal: ' . $exception->getMessage());
                 $formErrors[] = 'Produk gagal ditambahkan.';
+            }
+        }
+    } elseif ($action === 'scan_barcode') {
+        if ($barcodeValue === '' || strlen($barcodeValue) > 50) {
+            $formErrors[] = 'Barcode wajib diisi dan maksimal 50 karakter.';
+        } else {
+            try {
+                $statement = $pdo->prepare(
+                    'SELECT id_produk, nama_produk, harga, stok
+                     FROM tbl_produk
+                     WHERE kode_produk = :kode AND status_aktif = 1'
+                );
+                $statement->execute(['kode' => $barcodeValue]);
+                $product = $statement->fetch();
+                if ($product === false) {
+                    $formErrors[] = 'Barcode tidak ditemukan pada produk aktif.';
+                } else {
+                    $productId = (int) $product['id_produk'];
+                    $currentQuantity = (int) ($_SESSION['kasir_cart'][$productId] ?? 0);
+                    if ($currentQuantity >= 1000000) {
+                        $formErrors[] = 'Jumlah produk sudah mencapai batas maksimum.';
+                    } else {
+                        $newQuantity = $currentQuantity + 1;
+                        if ((float) $product['stok'] < $newQuantity) {
+                            $formErrors[] = 'Stok ' . $product['nama_produk']
+                                . ' tidak mencukupi. Stok tersedia: '
+                                . rtrim(rtrim(number_format((float) $product['stok'], 3, ',', '.'), '0'), ',')
+                                . '.';
+                        } else {
+                            $unitCents = decimalToCents($product['harga']);
+                            if ($unitCents > 0 && $newQuantity > intdiv(999999999999, $unitCents)) {
+                                $formErrors[] = 'Subtotal produk melebihi batas nilai transaksi.';
+                            } else {
+                                $_SESSION['kasir_cart'][$productId] = $newQuantity;
+                                setFlash('success', $product['nama_produk'] . ' ditambahkan melalui barcode.');
+                                redirectToMaster('kasir');
+                            }
+                        }
+                    }
+                }
+            } catch (PDOException $exception) {
+                error_log('Pemindaian barcode produk gagal: ' . $exception->getMessage());
+                $formErrors[] = 'Produk gagal dicari berdasarkan barcode.';
+            } catch (InvalidArgumentException $exception) {
+                $formErrors[] = 'Harga produk tidak valid untuk transaksi.';
             }
         }
     } elseif ($action === 'simpan') {
@@ -516,6 +565,23 @@ foreach ($cartRows as $row) {
 
         <!-- Search Bar & Kategori Tabs -->
         <div class="pos-toolbar">
+            <div class="pos-barcode-scan">
+                <div class="pos-barcode-field">
+                    <label for="pos-barcode-input">Scan barcode produk</label>
+                    <div class="pos-barcode-entry">
+                        <input type="text" id="pos-barcode-input" name="kode_barcode"
+                           maxlength="128" autocomplete="off" autocapitalize="off"
+                               spellcheck="false" placeholder="Arahkan scanner ke barcode"
+                               value="<?= e($barcodeValue) ?>">
+                        <button class="button" id="pos-barcode-submit" type="submit"
+                                name="aksi" value="scan_barcode" formnovalidate>
+                            Tambah
+                        </button>
+                    </div>
+                    <p class="input-hint">Barcode akan ditambahkan otomatis setelah pemindaian selesai.</p>
+                </div>
+            </div>
+
             <div class="pos-search-wrapper">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -733,9 +799,41 @@ foreach ($cartRows as $row) {
 <script>
 (function () {
     var searchInput = document.getElementById('pos-search');
+    var barcodeInput = document.getElementById('pos-barcode-input');
+    var barcodeSubmit = document.getElementById('pos-barcode-submit');
     var grid = document.getElementById('pos-grid');
     var chips = document.querySelectorAll('#pos-category-chips .pos-chip');
     var activeCategory = 'all';
+
+    if (barcodeInput && barcodeSubmit) {
+        var barcodeSubmitTimer = null;
+        var barcodeSubmitStarted = false;
+
+        function submitScannedBarcode() {
+            if (!barcodeSubmitStarted && barcodeInput.value.trim() !== '') {
+                barcodeSubmitStarted = true;
+                barcodeSubmit.click();
+            }
+        }
+
+        barcodeSubmit.addEventListener('click', function () {
+            window.clearTimeout(barcodeSubmitTimer);
+            barcodeSubmitStarted = true;
+        });
+
+        barcodeInput.addEventListener('input', function () {
+            window.clearTimeout(barcodeSubmitTimer);
+            barcodeSubmitTimer = window.setTimeout(submitScannedBarcode, 300);
+        });
+
+        barcodeInput.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                window.clearTimeout(barcodeSubmitTimer);
+                submitScannedBarcode();
+            }
+        });
+    }
 
     function filterProducts() {
         if (!grid) return;
@@ -856,8 +954,11 @@ foreach ($cartRows as $row) {
         });
     }
 
-    // Auto focus ke search bila ada
-    if (searchInput) {
+    // Fokuskan input barcode agar kasir siap memindai produk berikutnya.
+    if (barcodeInput) {
+        barcodeInput.focus();
+        barcodeInput.select();
+    } else if (searchInput) {
         searchInput.focus();
     }
 })();

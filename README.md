@@ -28,6 +28,7 @@ Jika aplikasi sudah terpasang, jalankan kembali `sql/upgrade_kasir.sql` agar kol
 
 - **Admin:** master pelanggan, kategori, produk, kasir, riwayat/detail transaksi, laporan, dan ekspor CSV.
 - **Kasir:** halaman kasir, struk, dan riwayat/detail transaksi.
+- POS menerima pemindai barcode USB yang berfungsi sebagai keyboard; atur `Kode Produk / Barcode` pada halaman admin produk, lalu scan pada kolom kasir. Produk aktif otomatis masuk ke keranjang setelah pemindaian selesai tanpa perlu menekan Enter.
 - Login memakai `password_hash`/`password_verify`, sesi dengan cookie `HttpOnly` dan `SameSite`, token CSRF untuk form, serta pembatasan percobaan login per sesi.
 - CRUD pelanggan memanggil stored procedure `TambahPelanggan` untuk penambahan; perubahan dan penghapusan memakai prepared statement.
 - Master kategori dan produk mendukung pencarian/filter, validasi input, status aktif, dan proteksi foreign key.
@@ -57,6 +58,7 @@ Lakukan uji dengan data dummy yang dapat dikenali, dan hapus data dummy hanya se
 - [ ] CRUD kategori dan produk; produk menampilkan nama kategori melalui JOIN.
 - [ ] Harga/stok negatif dan kategori kosong ditolak; kategori/produk yang masih direferensikan tidak dapat dihapus.
 - [ ] Pencarian/filter produk dan indikator stok menipis berfungsi.
+- [ ] Scan barcode produk aktif menambah satu item; barcode tidak dikenal dan stok habis menampilkan pesan tanpa mengubah keranjang.
 
 ### Kasir dan transaksi
 

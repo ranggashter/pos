@@ -362,9 +362,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $mode === 'daftar' && $queryError =
                     </select>
                 </div>
                 <div>
-                    <label for="kode_produk">Kode Produk <span style="font-weight:normal;color:var(--text-muted);">(Opsional)</span></label>
+                    <label for="kode_produk">Kode Produk / Barcode <span style="font-weight:normal;color:var(--text-muted);">(Opsional)</span></label>
                     <input id="kode_produk" name="kode_produk" type="text" maxlength="50"
-                           placeholder="Contoh: BRG-001"
+                           placeholder="Masukkan kode yang terbaca pada barcode"
                            value="<?= e($formData['kode_produk'] ?? '') ?>">
                 </div>
             </div>
