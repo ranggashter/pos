@@ -78,9 +78,16 @@ if ($transactionId === false) {
     <section class="receipt panel">
         <div class="receipt-heading">
             <div class="receipt-brand-header">
-                <p class="eyebrow receipt-kicker">Toko Kita <span>/</span> Bukti Penjualan</p>
+                <p class="eyebrow receipt-kicker">
+                    <span class="receipt-brand-name">Toko Kita</span>
+                    <span class="receipt-kicker-separator">/</span>
+                    <span class="receipt-kicker-note">Bukti Penjualan</span>
+                </p>
                 <h2 class="receipt-title">Nota Penjualan</h2>
-                <p class="muted receipt-number">No. Transaksi <strong>#<?= e($transaction['id_transaksi']) ?></strong></p>
+                <p class="muted receipt-number">
+                    <span class="receipt-screen-number">No. Transaksi <strong>#<?= e($transaction['id_transaksi']) ?></strong></span>
+                    <span class="receipt-print-number"><?= e(date('d.m.y H:i', strtotime($transaction['tanggal']))) ?> &nbsp; #<?= e($transaction['id_transaksi']) ?></span>
+                </p>
             </div>
             <div class="receipt-actions no-print">
                 <button class="button" type="button" onclick="window.print()">
@@ -128,7 +135,19 @@ if ($transactionId === false) {
                 <?php foreach ($details as $item): ?>
                     <?php $quantity = rtrim(rtrim(number_format((float) $item['jumlah'], 3, ',', '.'), '0'), ','); ?>
                     <tr>
-                        <td class="receipt-product"><?= e($item['nama_produk'] ?? 'Produk dihapus') ?></td>
+                        <td class="receipt-product">
+                            <?= e($item['nama_produk'] ?? 'Produk dihapus') ?>
+                            <span class="receipt-print-line">
+                                <span><?= e($quantity) ?> <?= e($item['satuan'] ?? '') ?> x <?= e($formatReceiptRupiah($item['harga_satuan'])) ?></span>
+                                <strong><?= e($formatReceiptRupiah($item['subtotal'])) ?></strong>
+                            </span>
+                            <?php if (decimalToCents($item['diskon']) > 0): ?>
+                                <span class="receipt-print-discount">
+                                    <span>Diskon</span>
+                                    <strong><?= e($formatReceiptRupiah($item['diskon'])) ?></strong>
+                                </span>
+                            <?php endif; ?>
+                        </td>
                         <td class="receipt-amount" data-label="Harga"><?= e($formatReceiptRupiah($item['harga_satuan'])) ?></td>
                         <td class="receipt-quantity" data-label="Qty"><?= e($quantity) ?> <?= e($item['satuan'] ?? '') ?></td>
                         <td class="receipt-amount" data-label="Diskon"><?= e($formatReceiptRupiah($item['diskon'])) ?></td>
@@ -138,7 +157,10 @@ if ($transactionId === false) {
                 </tbody>
                 <tfoot>
                 <tr>
-                    <th class="receipt-grand-label" colspan="4">Total Pembayaran</th>
+                    <th class="receipt-grand-label" colspan="4">
+                        <span class="receipt-screen-total">Total Pembayaran</span>
+                        <span class="receipt-print-total">TOTAL</span>
+                    </th>
                     <th class="receipt-grand-total"><?= e($formatReceiptRupiah($transaction['total_belanja'])) ?></th>
                 </tr>
                 </tfoot>

@@ -1656,9 +1656,16 @@ table tfoot th {
     letter-spacing: 0.08em;
 }
 
-.receipt-kicker span {
+.receipt-kicker-separator {
     padding: 0 4px;
     color: var(--text-muted);
+}
+
+.receipt-print-number,
+.receipt-print-line,
+.receipt-print-discount,
+.receipt-print-total {
+    display: none;
 }
 
 .receipt-title {
@@ -2348,11 +2355,76 @@ table tfoot th {
         color: #333 !important;
         font-size: 7.5pt !important;
     }
-}
 
-@media print and (max-width: 600px) {
+    .receipt {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        box-sizing: border-box !important;
+    }
+
+    .receipt-heading {
+        padding-bottom: 8px !important;
+        margin-bottom: 8px !important;
+    }
+
+    .receipt-brand-name {
+        display: block !important;
+        color: #000 !important;
+        font-size: 11pt !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.12em !important;
+        text-transform: uppercase;
+    }
+
+    .receipt-kicker-separator,
+    .receipt-kicker-note,
+    .receipt-screen-number {
+        display: none !important;
+    }
+
+    .receipt-title {
+        font-size: 12pt !important;
+        text-transform: uppercase;
+    }
+
+    .receipt-print-number {
+        display: block !important;
+        margin-top: 4px !important;
+        font-size: 7.5pt !important;
+        font-family: var(--font-mono);
+    }
+
+    .receipt-meta {
+        display: block !important;
+        margin: 8px 0 !important;
+        padding-bottom: 8px !important;
+    }
+
+    .receipt-meta div {
+        display: grid !important;
+        grid-template-columns: 19mm minmax(0, 1fr) !important;
+        gap: 2mm !important;
+        margin: 2px 0 !important;
+    }
+
+    .receipt-meta div:first-child {
+        display: none !important;
+    }
+
+    .receipt-meta dt,
+    .receipt-meta dd {
+        margin: 0 !important;
+        font-size: 8pt !important;
+    }
+
+    .receipt-table-wrap {
+        width: 100% !important;
+    }
+
     .receipt-items {
         display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
         table-layout: auto !important;
     }
 
@@ -2367,10 +2439,10 @@ table tfoot th {
     }
 
     .receipt-items tbody tr {
-        display: grid !important;
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        padding: 3px 0 !important;
+        display: block !important;
+        padding: 4px 0 !important;
         border-bottom: 1px dotted #999 !important;
+        break-inside: avoid !important;
     }
 
     .receipt-items tbody tr:last-child {
@@ -2378,44 +2450,57 @@ table tfoot th {
     }
 
     .receipt-items tbody td {
-        display: flex !important;
+        display: none !important;
         width: auto !important;
         min-width: 0 !important;
-        justify-content: space-between !important;
-        gap: 4px !important;
-        padding: 3px 2px !important;
-        border: 0 !important;
-        text-align: right !important;
-        white-space: normal !important;
-        overflow-wrap: anywhere !important;
     }
 
     .receipt-items tbody td:first-child {
-        grid-column: 1 / -1 !important;
-        justify-content: flex-start !important;
-        padding-bottom: 4px !important;
+        display: block !important;
+        width: 100% !important;
+        padding: 2px 0 0 !important;
+        border: 0 !important;
         text-align: left !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        font-size: 8.5pt !important;
     }
 
-    .receipt-items tbody td:not(:first-child)::before {
-        content: attr(data-label) !important;
-        flex: 0 0 auto;
-        margin-right: auto;
-        color: #444 !important;
-        font-size: 7pt !important;
+    .receipt-print-line,
+    .receipt-print-discount {
+        display: flex !important;
+        justify-content: space-between !important;
+        gap: 2mm !important;
+        font-size: 7.5pt !important;
         font-weight: 400 !important;
-        text-align: left !important;
+        white-space: nowrap !important;
+    }
+
+    .receipt-print-line {
+        margin-top: 1mm !important;
+    }
+
+    .receipt-print-discount {
+        margin-top: 0.5mm !important;
+        color: #333 !important;
+        font-size: 7pt !important;
     }
 
     .receipt-items tfoot tr {
         display: flex !important;
+        justify-content: space-between !important;
+        align-items: baseline !important;
         width: 100% !important;
     }
 
     .receipt-items tfoot th {
         display: block !important;
-        padding: 6px 2px !important;
+        padding: 7px 0 !important;
         white-space: normal !important;
+    }
+
+    .receipt-items tfoot th:first-child {
+        width: auto !important;
     }
 
     .receipt-items tfoot .receipt-grand-label {
@@ -2424,9 +2509,36 @@ table tfoot th {
     }
 
     .receipt-items tfoot .receipt-grand-total {
-        flex: 0 0 auto !important;
-        padding-left: 4px !important;
-        font-size: 9pt !important;
+        padding-left: -2mm !important;
+        font-size: 9.5pt !important;
         white-space: nowrap !important;
+    }
+
+    .receipt-screen-total {
+        display: none !important;
+    }
+
+    .receipt-print-total {
+        display: inline !important;
+        font-weight: 700 !important;
+    }
+
+    .receipt-payment-summary {
+        margin-top: 7px !important;
+    }
+
+    .receipt-payment-summary div {
+        padding: 3px 0 !important;
+    }
+
+    .receipt-payment-summary dt,
+    .receipt-payment-summary dd {
+        font-size: 8pt !important;
+    }
+
+    .receipt-thanks {
+        margin-top: 9px !important;
+        padding-top: 7px !important;
+        text-transform: uppercase;
     }
 }
