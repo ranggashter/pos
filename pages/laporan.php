@@ -45,9 +45,11 @@ try {
         'SELECT t.id_transaksi, t.tanggal, p.nama_pelanggan, t.total_belanja
          FROM tbl_transaksi t
          LEFT JOIN tbl_pelanggan p ON p.id_pelanggan = t.id_pelanggan
-         WHERE t.total_belanja > (
+         WHERE t.status_pembayaran = \'paid\'
+           AND t.total_belanja > (
              SELECT AVG(total_belanja)
              FROM tbl_transaksi
+             WHERE status_pembayaran = \'paid\'
          )
          ORDER BY t.total_belanja DESC, t.id_transaksi DESC'
     )->fetchAll();
@@ -59,6 +61,7 @@ try {
              SELECT 1
              FROM tbl_transaksi t
              WHERE t.id_pelanggan = p.id_pelanggan
+               AND t.status_pembayaran = \'paid\'
          )
          ORDER BY p.nama_pelanggan, p.id_pelanggan'
     )->fetchAll();
@@ -67,6 +70,7 @@ try {
         'SELECT t.id_transaksi, t.tanggal, p.nama_pelanggan, t.total_belanja
          FROM tbl_transaksi t
          LEFT JOIN tbl_pelanggan p ON p.id_pelanggan = t.id_pelanggan
+         WHERE t.status_pembayaran = \'paid\'
          ORDER BY t.total_belanja DESC, t.id_transaksi DESC
          LIMIT 5'
     )->fetchAll();

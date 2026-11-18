@@ -66,12 +66,14 @@ try {
         $where = $conditions === [] ? '' : ' WHERE ' . implode(' AND ', $conditions);
         $from = ' FROM (
                       SELECT v.id_transaksi, v.tanggal, v.nama_pelanggan, v.kota,
-                             v.total_belanja, t.id_pelanggan
+                             v.total_belanja, t.id_pelanggan, t.metode_pembayaran,
+                             t.status_pembayaran
                       FROM view_transaksi_pelanggan v
                       INNER JOIN tbl_transaksi t ON t.id_transaksi = v.id_transaksi
                       UNION ALL
                       SELECT t.id_transaksi, t.tanggal, NULL AS nama_pelanggan,
-                             NULL AS kota, t.total_belanja, t.id_pelanggan
+                             NULL AS kota, t.total_belanja, t.id_pelanggan,
+                             t.metode_pembayaran, t.status_pembayaran
                       FROM tbl_transaksi t
                       WHERE t.id_pelanggan IS NULL
                   ) v';
@@ -84,7 +86,8 @@ try {
         $offset = ($currentPage - 1) * $perPage;
 
         $statement = $pdo->prepare(
-            'SELECT v.id_transaksi, v.tanggal, v.nama_pelanggan, v.kota, v.total_belanja
+            'SELECT v.id_transaksi, v.tanggal, v.nama_pelanggan, v.kota, v.total_belanja,
+                    v.metode_pembayaran, v.status_pembayaran
              ' . $from . $where . '
              ORDER BY v.tanggal DESC, v.id_transaksi DESC
              LIMIT :batas OFFSET :offset'
@@ -182,6 +185,8 @@ try {
                     <th>Tanggal</th>
                     <th>Pelanggan</th>
                     <th>Kota</th>
+                    <th>Pembayaran</th>
+                    <th>Status</th>
                     <th>Total Belanja</th>
                     <th class="actions-column no-print">Aksi</th>
                 </tr>
@@ -193,6 +198,8 @@ try {
                         <td><span style="font-size:0.88rem;color:var(--text-body);"><?= e(date('d M Y', strtotime($transaction['tanggal']))) ?></span></td>
                         <td><strong><?= e($transaction['nama_pelanggan'] ?? 'Tanpa pelanggan') ?></strong></td>
                         <td><span style="display:inline-block;padding:2px 8px;border-radius:var(--radius-pill);background:var(--surface-subtle);border:1px solid var(--border-subtle);font-size:0.8rem;font-weight:600;"><?= e($transaction['kota'] ?? '—') ?></span></td>
+                        <td><?= e($transaction['metode_pembayaran'] === 'qris' ? 'QRIS' : ($transaction['metode_pembayaran'] === 'member' ? 'Member' : 'Tunai')) ?></td>
+                        <td><?= e($transaction['status_pembayaran'] === 'reversed' ? 'Dibatalkan/dikembalikan' : 'Lunas') ?></td>
                         <td><span style="font-weight:700;color:var(--primary-700);"><?= e(formatRupiah($transaction['total_belanja'])) ?></span></td>
                         <td class="no-print">
                             <div class="row-actions">

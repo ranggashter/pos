@@ -24,7 +24,9 @@ if ($transactionId === false) {
 } else {
     try {
         $statement = $pdo->prepare(
-            'SELECT t.id_transaksi, t.tanggal, t.id_pelanggan, t.total_belanja, t.uang_diterima,
+            'SELECT t.id_transaksi, t.tanggal, t.id_pelanggan, t.total_belanja,
+                    t.uang_diterima, t.saldo_digunakan, t.metode_pembayaran,
+                    t.status_pembayaran,
                     p.nama_pelanggan, p.kota
              FROM tbl_transaksi t
              LEFT JOIN tbl_pelanggan p ON p.id_pelanggan = t.id_pelanggan
@@ -47,17 +49,52 @@ if ($transactionId === false) {
             $detailStatement->execute(['id' => $transactionId]);
             $details = $detailStatement->fetchAll();
 
-            if ($transaction['uang_diterima'] !== null) {
+            $paymentMethod = $transaction['metode_pembayaran'] ?? 'tunai';
+            $paymentStatus = $transaction['status_pembayaran'] ?? 'paid';
+            $paymentStatusLabels = [
+                'paid' => 'Lunas',
+                'reversed' => 'Dibatalkan atau dikembalikan',
+            ];
+            if ($paymentStatus === 'paid' || $paymentStatus === 'reversed') {
                 try {
                     $totalCents = decimalToCents($transaction['total_belanja']);
-                    $paidCents = decimalToCents($transaction['uang_diterima']);
-                    if ($paidCents < $totalCents) {
-                        throw new DomainException('Uang diterima lebih kecil daripada total belanja.');
+                    $balanceUsedCents = decimalToCents($transaction['saldo_digunakan']);
+                    if ($balanceUsedCents > $totalCents) {
+                        throw new DomainException('Saldo digunakan melebihi total belanja.');
                     }
-                    $paymentSummary = [
-                        'paid' => $transaction['uang_diterima'],
-                        'change' => centsToDecimal($paidCents - $totalCents),
-                    ];
+
+                    if ($paymentMethod === 'qris') {
+                        $paymentSummary = [
+                            'method' => 'QRIS Midtrans',
+                            'status' => $paymentStatusLabels[$paymentStatus],
+                            'balance' => $transaction['saldo_digunakan'],
+                            'amount_label' => 'Nilai QRIS',
+                            'amount' => $transaction['total_belanja'],
+                            'change' => '0.00',
+                        ];
+                    } elseif ($paymentMethod === 'member') {
+                        $paymentSummary = [
+                            'method' => 'Saldo member',
+                            'status' => $paymentStatusLabels[$paymentStatus],
+                            'balance' => $transaction['saldo_digunakan'],
+                            'amount_label' => 'Saldo dipakai',
+                            'amount' => $transaction['saldo_digunakan'],
+                            'change' => '0.00',
+                        ];
+                    } elseif ($transaction['uang_diterima'] !== null) {
+                        $paidCents = decimalToCents($transaction['uang_diterima']);
+                        if ($paidCents < $totalCents) {
+                            throw new DomainException('Uang tunai diterima lebih kecil daripada total belanja.');
+                        }
+                        $paymentSummary = [
+                            'method' => 'Tunai',
+                            'status' => $paymentStatusLabels[$paymentStatus],
+                            'balance' => $transaction['saldo_digunakan'],
+                            'amount_label' => 'Uang tunai diterima',
+                            'amount' => $transaction['uang_diterima'],
+                            'change' => centsToDecimal($paidCents - $totalCents),
+                        ];
+                    }
                 } catch (InvalidArgumentException | DomainException $exception) {
                     error_log('Data pembayaran struk tidak valid: ' . $exception->getMessage());
                     $receiptError = 'Data pembayaran pada struk tidak valid.';
@@ -170,11 +207,19 @@ if ($transactionId === false) {
         <dl class="receipt-payment-summary">
             <div>
                 <dt>Metode pembayaran</dt>
-                <dd><?= $paymentSummary === null ? 'Tidak tercatat' : 'Tunai' ?></dd>
+                <dd><?= $paymentSummary === null ? 'Tidak tercatat' : e($paymentSummary['method']) ?></dd>
             </div>
             <div>
-                <dt>Uang diterima</dt>
-                <dd><?= $paymentSummary === null ? 'Tidak tercatat' : e($formatReceiptRupiah($paymentSummary['paid'])) ?></dd>
+                <dt>Status pembayaran</dt>
+                <dd><?= $paymentSummary === null ? 'Tidak tercatat' : e($paymentSummary['status']) ?></dd>
+            </div>
+            <div>
+                <dt>Saldo member digunakan</dt>
+                <dd><?= $paymentSummary === null ? 'Tidak tercatat' : e($formatReceiptRupiah($paymentSummary['balance'])) ?></dd>
+            </div>
+            <div>
+                <dt><?= $paymentSummary === null ? 'Pembayaran diterima' : e($paymentSummary['amount_label']) ?></dt>
+                <dd><?= $paymentSummary === null ? 'Tidak tercatat' : e($formatReceiptRupiah($paymentSummary['amount'])) ?></dd>
             </div>
             <div>
                 <dt>Kembalian</dt>

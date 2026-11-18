@@ -10,7 +10,13 @@ $mode = $_GET['aksi'] ?? 'daftar';
 $mode = is_string($mode) ? $mode : 'daftar';
 $formErrors = [];
 $queryError = null;
-$formData = ['nama_pelanggan' => '', 'kota' => ''];
+$formData = [
+    'nama_pelanggan' => '',
+    'kota' => '',
+    'rfid_uid' => '',
+    'diskon_persen' => '0.00',
+    'saldo' => '0.00',
+];
 $formId = null;
 
 $getCustomerId = static function (mixed $value): ?int {
@@ -25,6 +31,16 @@ $validateCustomer = static function (array $input): array {
     $city = isset($input['kota']) && is_string($input['kota'])
         ? trim($input['kota'])
         : '';
+    $rfidUid = isset($input['rfid_uid']) && is_string($input['rfid_uid'])
+        ? strtoupper(trim($input['rfid_uid']))
+        : '';
+    $rfidUid = preg_replace('/[\s:-]+/', '', $rfidUid) ?? '';
+    $discount = !isset($input['diskon_persen'])
+        ? '0'
+        : (is_string($input['diskon_persen']) ? trim($input['diskon_persen']) : '');
+    $balance = !isset($input['saldo'])
+        ? '0'
+        : (is_string($input['saldo']) ? trim($input['saldo']) : '');
     $errors = [];
 
     if ($name === '') {
@@ -39,7 +55,19 @@ $validateCustomer = static function (array $input): array {
         $errors[] = 'Kota maksimal 50 karakter.';
     }
 
-    return [$name, $city, $errors];
+    if ($rfidUid !== '' && preg_match('/^[A-Z0-9]{4,64}$/D', $rfidUid) !== 1) {
+        $errors[] = 'UID RFID harus terdiri dari 4–64 karakter huruf atau angka.';
+    }
+
+    if (preg_match('/^(?:100(?:\.0{1,2})?|(?:\d|[1-9]\d)(?:\.\d{1,2})?)$/D', $discount) !== 1) {
+        $errors[] = 'Diskon harus berupa persentase antara 0 dan 100, maksimal 2 angka desimal.';
+    }
+
+    if (preg_match('/^\d{1,10}(?:\.\d{1,2})?$/D', $balance) !== 1) {
+        $errors[] = 'Saldo harus berupa angka Rupiah nonnegatif dengan maksimal 2 angka desimal.';
+    }
+
+    return [$name, $city, $rfidUid, $discount, $balance, $errors];
 };
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -84,8 +112,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'tambah' || $action === 'ubah') {
-        [$name, $city, $formErrors] = $validateCustomer($_POST);
-        $formData = ['nama_pelanggan' => $name, 'kota' => $city];
+        [$name, $city, $rfidUid, $discount, $balance, $formErrors] = $validateCustomer($_POST);
+        $formData = [
+            'nama_pelanggan' => $name,
+            'kota' => $city,
+            'rfid_uid' => $rfidUid,
+            'diskon_persen' => $discount,
+            'saldo' => $balance,
+        ];
         $formId = $getCustomerId($_POST['id_pelanggan'] ?? null);
         $mode = $action;
 
@@ -96,9 +130,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($formErrors === []) {
             try {
                 if ($action === 'tambah') {
-                    $statement = $pdo->prepare('CALL TambahPelanggan(:nama, :kota)');
-                    $statement->execute(['nama' => $name, 'kota' => $city]);
-                    $statement->closeCursor();
+                    $statement = $pdo->prepare(
+                        'INSERT INTO tbl_pelanggan
+                            (nama_pelanggan, kota, rfid_uid, diskon_persen, saldo)
+                         VALUES (:nama, :kota, :rfid_uid, :diskon_persen, :saldo)'
+                    );
+                    $statement->execute([
+                        'nama' => $name,
+                        'kota' => $city,
+                        'rfid_uid' => $rfidUid === '' ? null : $rfidUid,
+                        'diskon_persen' => $discount,
+                        'saldo' => $balance,
+                    ]);
                     setFlash('success', 'Pelanggan berhasil ditambahkan.');
                     redirectToMaster();
                 }
@@ -112,12 +155,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $statement = $pdo->prepare(
                         'UPDATE tbl_pelanggan
-                         SET nama_pelanggan = :nama, kota = :kota
+                         SET nama_pelanggan = :nama, kota = :kota, rfid_uid = :rfid_uid,
+                             diskon_persen = :diskon_persen, saldo = :saldo
                          WHERE id_pelanggan = :id'
                     );
                     $statement->execute([
                         'nama' => $name,
                         'kota' => $city,
+                        'rfid_uid' => $rfidUid === '' ? null : $rfidUid,
+                        'diskon_persen' => $discount,
+                        'saldo' => $balance,
                         'id' => $formId,
                     ]);
                     setFlash('success', 'Data pelanggan berhasil diperbarui.');
@@ -125,7 +172,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } catch (PDOException $exception) {
                 error_log('Simpan pelanggan gagal: ' . $exception->getMessage());
-                $formErrors[] = 'Data pelanggan gagal disimpan karena terjadi kesalahan database.';
+                $formErrors[] = (int) ($exception->errorInfo[1] ?? 0) === 1062
+                    ? 'UID kartu RFID sudah digunakan pelanggan lain.'
+                    : 'Data pelanggan gagal disimpan karena terjadi kesalahan database.';
             }
         }
     } else {
@@ -141,7 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $mode === 'ubah') {
     } else {
         try {
             $statement = $pdo->prepare(
-                'SELECT nama_pelanggan, kota
+                'SELECT nama_pelanggan, kota, rfid_uid, diskon_persen, saldo
                  FROM tbl_pelanggan
                  WHERE id_pelanggan = :id'
             );
@@ -230,8 +279,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $mode === 'daftar' && $queryError =
         $offset = ($currentPage - 1) * $perPage;
 
         $listStatement = $pdo->prepare(
-            'SELECT id_pelanggan, nama_pelanggan, kota
-             FROM view_pelanggan' . $where . '
+            'SELECT id_pelanggan, nama_pelanggan, kota, rfid_uid, diskon_persen, saldo
+             FROM tbl_pelanggan' . $where . '
              ORDER BY nama_pelanggan, id_pelanggan
              LIMIT :batas OFFSET :offset'
         );
@@ -317,7 +366,7 @@ if ($queryError !== null): ?>
         <div class="section-heading">
             <div>
                 <h2><?= $mode === 'tambah' ? 'Tambah Pelanggan' : 'Ubah Pelanggan' ?></h2>
-                <p class="muted">Nama maksimal 100 karakter, kota maksimal 50 karakter.</p>
+                <p class="muted">Atur persentase diskon untuk profil pelanggan. Nilai ini hanya disimpan dan belum diterapkan otomatis.</p>
             </div>
             <a class="button button-secondary" href="index.php?page=pelanggan">Kembali</a>
         </div>
@@ -355,6 +404,51 @@ if ($queryError !== null): ?>
                     value="<?= e($formData['kota']) ?>"
                     autocomplete="address-level2"
                 >
+            </div>
+
+            <div>
+                <label for="rfid_uid">UID Kartu Member (RFID)</label>
+                <input
+                    id="rfid_uid"
+                    name="rfid_uid"
+                    type="text"
+                    maxlength="64"
+                    placeholder="Klik lalu scan kartu RFID"
+                    value="<?= e($formData['rfid_uid'] ?? '') ?>"
+                    autocomplete="off"
+                    autocapitalize="characters"
+                    spellcheck="false"
+                >
+                <p class="input-hint">Reader USB keyboard akan mengetikkan UID ke kolom ini. Kosongkan untuk melepas kartu.</p>
+            </div>
+
+            <div>
+                <label for="diskon_persen">Diskon Pelanggan (%)</label>
+                <input
+                    id="diskon_persen"
+                    name="diskon_persen"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    required
+                    value="<?= e($formData['diskon_persen'] ?? '0.00') ?>"
+                >
+            </div>
+
+            <div>
+                <label for="saldo">Saldo Pelanggan (Rp)</label>
+                <input
+                    id="saldo"
+                    name="saldo"
+                    type="number"
+                    min="0"
+                    max="9999999999.99"
+                    step="0.01"
+                    required
+                    value="<?= e($formData['saldo'] ?? '0.00') ?>"
+                >
+                <p class="input-hint">Saldo diubah oleh admin dan otomatis dipakai di kasir hingga tagihan lunas atau saldo habis.</p>
             </div>
 
             <div class="form-actions">
@@ -419,6 +513,9 @@ if ($queryError !== null): ?>
                         <th style="width: 70px;">ID</th>
                         <th>Nama Pelanggan</th>
                         <th>Kota</th>
+                        <th>Kartu RFID</th>
+                        <th>Diskon</th>
+                        <th>Saldo</th>
                         <th class="actions-column">Aksi</th>
                     </tr>
                     </thead>
@@ -428,6 +525,9 @@ if ($queryError !== null): ?>
                             <td><span style="font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted);">#<?= e($customer['id_pelanggan']) ?></span></td>
                             <td><strong><?= e($customer['nama_pelanggan']) ?></strong></td>
                             <td><span style="display:inline-block;padding:2px 8px;border-radius:var(--radius-pill);background:var(--surface-subtle);border:1px solid var(--border-subtle);font-size:0.82rem;font-weight:600;"><?= e($customer['kota']) ?></span></td>
+                            <td><span style="font-family:var(--font-mono);font-size:0.82rem;"><?= e($customer['rfid_uid'] ?? 'Belum terhubung') ?></span></td>
+                            <td><?= e(number_format((float) $customer['diskon_persen'], 2, ',', '.')) ?>%</td>
+                            <td><?= e(formatRupiah($customer['saldo'])) ?></td>
                             <td>
                                 <div class="row-actions">
                                     <a class="text-link" href="index.php?page=pelanggan&amp;aksi=ubah&amp;id=<?= e($customer['id_pelanggan']) ?>">Ubah</a>

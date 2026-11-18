@@ -6,6 +6,8 @@ if (!defined('APP_BOOTSTRAPPED')) {
     exit;
 }
 
+require_once __DIR__ . '/../includes/midtrans.php';
+
 $getId = static function (mixed $value): ?int {
     $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     return $id === false ? null : $id;
@@ -17,6 +19,24 @@ $isValidDate = static function (string $value): bool {
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
     return $date !== false && $date->format('Y-m-d') === $value;
 };
+$percentageToBasisPoints = static function (mixed $value): int {
+    $percentage = (string) $value;
+    if (preg_match('/^\d{1,3}(?:\.\d{1,2})?$/D', $percentage) !== 1) {
+        throw new InvalidArgumentException('Persentase diskon pelanggan tidak valid.');
+    }
+
+    [$whole, $fraction] = array_pad(explode('.', $percentage, 2), 2, '');
+    $basisPoints = ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
+    if ($basisPoints > 10000) {
+        throw new InvalidArgumentException('Persentase diskon pelanggan melebihi 100%.');
+    }
+
+    return $basisPoints;
+};
+$discountCentsFor = static function (int $amountCents, int $basisPoints): int {
+    return intdiv($amountCents, 10000) * $basisPoints
+        + intdiv(($amountCents % 10000) * $basisPoints + 5000, 10000);
+};
 
 if (!isset($_SESSION['kasir_cart']) || !is_array($_SESSION['kasir_cart'])) {
     $_SESSION['kasir_cart'] = [];
@@ -26,6 +46,7 @@ if (!isset($_SESSION['kasir_form']) || !is_array($_SESSION['kasir_form'])) {
         'id_pelanggan' => '',
         'tanggal' => date('Y-m-d'),
         'uang_diterima' => '',
+        'metode_pembayaran' => 'tunai',
     ];
 }
 $cart = $_SESSION['kasir_cart'];
@@ -40,8 +61,14 @@ $formState['tanggal'] = is_string($formState['tanggal'] ?? null)
 $formState['uang_diterima'] = is_scalar($formState['uang_diterima'] ?? null)
     ? (string) $formState['uang_diterima']
     : '';
+$formState['metode_pembayaran'] = in_array(
+    $formState['metode_pembayaran'] ?? null,
+    ['tunai', 'qris', 'member'],
+    true
+) ? $formState['metode_pembayaran'] : 'tunai';
 $formErrors = [];
 $barcodeValue = '';
+$memberCardValue = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isValidCsrfToken($_POST['csrf_token'] ?? null)) {
@@ -59,17 +86,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postedCash = isset($_POST['uang_diterima']) && is_string($_POST['uang_diterima'])
         ? trim($_POST['uang_diterima'])
         : '';
+    $postedPaymentMethod = isset($_POST['metode_pembayaran'])
+        && is_string($_POST['metode_pembayaran'])
+            ? $_POST['metode_pembayaran']
+            : '';
     $barcodeValue = isset($_POST['kode_barcode']) && is_string($_POST['kode_barcode'])
         ? trim($_POST['kode_barcode'])
+        : '';
+    $memberCardValue = isset($_POST['uid_member']) && is_string($_POST['uid_member'])
+        ? trim($_POST['uid_member'])
         : '';
     $formState = [
         'id_pelanggan' => $postedCustomer,
         'tanggal' => $postedDate,
         'uang_diterima' => $postedCash,
+        'metode_pembayaran' => $postedPaymentMethod,
     ];
     $_SESSION['kasir_form'] = $formState;
 
-    if (str_starts_with($action, 'hapus:')) {
+    if ($action === 'scan_member_rfid') {
+        $memberUid = strtoupper($memberCardValue);
+        $memberUid = preg_replace('/[\s:-]+/', '', $memberUid) ?? '';
+        if (preg_match('/^[A-Z0-9]{4,64}$/D', $memberUid) !== 1) {
+            $formErrors[] = 'UID kartu RFID tidak valid. Silakan scan ulang kartu member.';
+        } else {
+            try {
+                $memberStatement = $pdo->prepare(
+                    'SELECT id_pelanggan, nama_pelanggan
+                     FROM tbl_pelanggan
+                     WHERE rfid_uid = :uid
+                     LIMIT 1'
+                );
+                $memberStatement->execute(['uid' => $memberUid]);
+                $member = $memberStatement->fetch();
+                if ($member === false) {
+                    $formErrors[] = 'Kartu RFID belum terhubung ke data pelanggan.';
+                } else {
+                    $formState['id_pelanggan'] = (string) $member['id_pelanggan'];
+                    $_SESSION['kasir_form'] = $formState;
+                    setFlash('success', 'Kartu member terdeteksi: ' . $member['nama_pelanggan'] . '.');
+                    redirectToMaster('kasir');
+                }
+            } catch (PDOException $exception) {
+                error_log('Membaca kartu member RFID gagal: ' . $exception->getMessage());
+                $formErrors[] = 'Kartu member gagal dibaca. Silakan coba kembali.';
+            }
+        }
+    } elseif (str_starts_with($action, 'hapus:')) {
         $removeId = $getId(substr($action, 6));
         if ($removeId === null) {
             $formErrors[] = 'Produk pada keranjang tidak valid.';
@@ -222,24 +285,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'simpan') {
         $customerId = $postedCustomer === '' ? null : $getId($postedCustomer);
-        $cashDigits = preg_match('/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/D', $postedCash) === 1
-            ? str_replace('.', '', $postedCash)
-            : null;
-        $cashCents = null;
+        $paymentMethod = $postedPaymentMethod;
+        $cashCents = 0;
+        $cashDigits = null;
         if ($postedCustomer !== '' && $customerId === null) {
             $formErrors[] = 'Pelanggan yang dipilih tidak valid.';
         }
-        if ($cashDigits === null) {
-            $formErrors[] = 'Masukkan uang diterima dalam angka Rupiah yang valid.';
-        } else {
-            try {
-                $cashCents = decimalToCents($cashDigits);
-                if ($cashCents > 999999999999) {
-                    $cashCents = null;
-                    $formErrors[] = 'Uang diterima melebihi batas nilai transaksi.';
+        if (!in_array($paymentMethod, ['tunai', 'qris', 'member'], true)) {
+            $formErrors[] = 'Pilih metode pembayaran yang valid.';
+        }
+        if ($paymentMethod === 'tunai') {
+            $cashDigits = preg_match('/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/D', $postedCash) === 1
+                ? str_replace('.', '', $postedCash)
+                : null;
+            if ($cashDigits === null) {
+                $formErrors[] = 'Masukkan uang tunai dalam angka Rupiah yang valid.';
+            } else {
+                try {
+                    $cashCents = decimalToCents($cashDigits);
+                    if ($cashCents > 999999999999) {
+                        $formErrors[] = 'Uang tunai melebihi batas nilai transaksi.';
+                    }
+                } catch (InvalidArgumentException $exception) {
+                    $formErrors[] = 'Uang tunai melebihi batas nilai transaksi.';
                 }
-            } catch (InvalidArgumentException $exception) {
-                $formErrors[] = 'Uang diterima melebihi batas nilai transaksi.';
+            }
+        }
+        if ($paymentMethod === 'qris') {
+            try {
+                midtransServerKey();
+            } catch (RuntimeException $exception) {
+                $formErrors[] = 'Pembayaran QRIS belum dikonfigurasi oleh administrator.';
             }
         }
         if (!$isValidDate($postedDate)) {
@@ -253,20 +329,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $maximumTotalCents = 999999999999;
             $items = [];
             $totalCents = 0;
+            $grossTotalCents = 0;
+            $discountBasisPoints = 0;
+            $customerBalanceCents = 0;
+            $balanceUsedCents = 0;
+            $transactionId = null;
+            $qrisOrderId = null;
+            $midtransOrderId = null;
             try {
                 $pdo->beginTransaction();
 
                 if ($customerId !== null) {
                     $customerStatement = $pdo->prepare(
-                        'SELECT id_pelanggan
+                        'SELECT id_pelanggan, diskon_persen, saldo
                          FROM tbl_pelanggan
                          WHERE id_pelanggan = :id
                          FOR UPDATE'
                     );
                     $customerStatement->execute(['id' => $customerId]);
-                    if ($customerStatement->fetchColumn() === false) {
+                    $selectedCustomer = $customerStatement->fetch();
+                    if ($selectedCustomer === false) {
                         throw new DomainException('Pelanggan yang dipilih tidak ditemukan.');
                     }
+                    $discountBasisPoints = $percentageToBasisPoints(
+                        $selectedCustomer['diskon_persen']
+                    );
+                    $customerBalanceCents = decimalToCents($selectedCustomer['saldo']);
                 }
 
                 $cartItems = $_SESSION['kasir_cart'];
@@ -311,57 +399,135 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $subtotal = $totalStatement->fetchColumn();
                     $totalStatement->closeCursor();
                     $subtotalCents = decimalToCents($subtotal);
-                    if ($subtotalCents > $maximumTotalCents - $totalCents) {
+                    if ($subtotalCents > $maximumTotalCents - $grossTotalCents) {
                         throw new DomainException('Total transaksi melebihi batas nilai yang dapat disimpan.');
                     }
 
-                    $totalCents += $subtotalCents;
+                    $grossTotalCents += $subtotalCents;
+                    $itemDiscountCents = $discountCentsFor(
+                        $subtotalCents,
+                        $discountBasisPoints
+                    );
+                    $payableSubtotalCents = $subtotalCents - $itemDiscountCents;
+                    if ($payableSubtotalCents > $maximumTotalCents - $totalCents) {
+                        throw new DomainException('Total transaksi melebihi batas nilai yang dapat disimpan.');
+                    }
+
+                    $totalCents += $payableSubtotalCents;
                     $items[] = [
                         'id_produk' => $itemProductId,
                         'jumlah' => $itemQuantity,
                         'harga_satuan' => (string) $product['harga'],
-                        'subtotal' => (string) $subtotal,
+                        'diskon' => centsToDecimal($itemDiscountCents),
+                        'subtotal' => centsToDecimal($payableSubtotalCents),
                     ];
                 }
 
-                if ($cashCents === null || $cashCents < $totalCents) {
-                    throw new DomainException('Uang diterima kurang dari total pembayaran.');
+                if ($paymentMethod === 'tunai' && $cashCents < $totalCents) {
+                    throw new DomainException('Uang tunai diterima kurang dari total pembayaran.');
+                }
+                if ($paymentMethod === 'member') {
+                    if ($customerId === null) {
+                        throw new DomainException('Pilih pelanggan untuk membayar dengan saldo member.');
+                    }
+                    if ($customerBalanceCents < $totalCents) {
+                        throw new DomainException('Saldo member tidak mencukupi untuk membayar seluruh transaksi.');
+                    }
+                    $balanceUsedCents = $totalCents;
+                }
+                if ($paymentMethod === 'qris') {
+                    if ($totalCents <= 0 || $totalCents % 100 !== 0) {
+                        throw new DomainException('Total QRIS harus minimal Rp1 dan tanpa pecahan Rupiah.');
+                    }
+                    try {
+                        $midtransOrderId = 'TK-' . date('YmdHis') . '-' . bin2hex(random_bytes(6));
+                    } catch (Exception $exception) {
+                        error_log('Membuat ID order QRIS gagal: ' . $exception->getMessage());
+                        throw new DomainException('ID pembayaran QRIS tidak dapat dibuat.');
+                    }
                 }
 
-                $transactionStatement = $pdo->prepare(
-                    'INSERT INTO tbl_transaksi (tanggal, id_pelanggan, total_belanja, uang_diterima)
-                     VALUES (:tanggal, :id_pelanggan, :total, :uang_diterima)'
-                );
-                $transactionStatement->bindValue(':tanggal', $postedDate, PDO::PARAM_STR);
-                $transactionStatement->bindValue(
-                    ':id_pelanggan',
-                    $customerId,
-                    $customerId === null ? PDO::PARAM_NULL : PDO::PARAM_INT
-                );
-                $transactionStatement->bindValue(
-                    ':total',
-                    centsToDecimal($totalCents),
-                    PDO::PARAM_STR
-                );
-                $transactionStatement->bindValue(
-                    ':uang_diterima',
-                    centsToDecimal($cashCents),
-                    PDO::PARAM_STR
-                );
-                $transactionStatement->execute();
-                $transactionId = (int) $pdo->lastInsertId();
+                if ($paymentMethod === 'member' && $balanceUsedCents > 0) {
+                    $balanceStatement = $pdo->prepare(
+                        'UPDATE tbl_pelanggan
+                         SET saldo = saldo - :saldo_digunakan
+                         WHERE id_pelanggan = :id AND saldo >= :saldo_minimum'
+                    );
+                    $balanceStatement->execute([
+                        'saldo_digunakan' => centsToDecimal($balanceUsedCents),
+                        'id' => $customerId,
+                        'saldo_minimum' => centsToDecimal($balanceUsedCents),
+                    ]);
+                    if ($balanceStatement->rowCount() !== 1) {
+                        throw new DomainException('Saldo pelanggan berubah saat transaksi diproses.');
+                    }
+                }
+
+                if ($paymentMethod === 'qris') {
+                    $qrisOrderStatement = $pdo->prepare(
+                        'INSERT INTO tbl_qris_order
+                            (midtrans_order_id, tanggal, id_pelanggan, total_belanja)
+                         VALUES (:order_id, :tanggal, :id_pelanggan, :total)'
+                    );
+                    $qrisOrderStatement->bindValue(':order_id', $midtransOrderId, PDO::PARAM_STR);
+                    $qrisOrderStatement->bindValue(':tanggal', $postedDate, PDO::PARAM_STR);
+                    $qrisOrderStatement->bindValue(
+                        ':id_pelanggan',
+                        $customerId,
+                        $customerId === null ? PDO::PARAM_NULL : PDO::PARAM_INT
+                    );
+                    $qrisOrderStatement->bindValue(':total', centsToDecimal($totalCents), PDO::PARAM_STR);
+                    $qrisOrderStatement->execute();
+                    $qrisOrderId = (int) $pdo->lastInsertId();
+                } else {
+                    $transactionStatement = $pdo->prepare(
+                        'INSERT INTO tbl_transaksi
+                            (tanggal, id_pelanggan, total_belanja, uang_diterima, saldo_digunakan,
+                             metode_pembayaran, status_pembayaran)
+                         VALUES (:tanggal, :id_pelanggan, :total, :uang_diterima, :saldo_digunakan,
+                                 :metode_pembayaran, :status_pembayaran)'
+                    );
+                    $transactionStatement->bindValue(':tanggal', $postedDate, PDO::PARAM_STR);
+                    $transactionStatement->bindValue(
+                        ':id_pelanggan',
+                        $customerId,
+                        $customerId === null ? PDO::PARAM_NULL : PDO::PARAM_INT
+                    );
+                    $transactionStatement->bindValue(':total', centsToDecimal($totalCents), PDO::PARAM_STR);
+                    $transactionStatement->bindValue(
+                        ':uang_diterima',
+                        $paymentMethod === 'tunai' ? centsToDecimal($cashCents) : null,
+                        $paymentMethod === 'tunai' ? PDO::PARAM_STR : PDO::PARAM_NULL
+                    );
+                    $transactionStatement->bindValue(
+                        ':saldo_digunakan',
+                        centsToDecimal($balanceUsedCents),
+                        PDO::PARAM_STR
+                    );
+                    $transactionStatement->bindValue(':metode_pembayaran', $paymentMethod, PDO::PARAM_STR);
+                    $transactionStatement->bindValue(':status_pembayaran', 'paid', PDO::PARAM_STR);
+                    $transactionStatement->execute();
+                    $transactionId = (int) $pdo->lastInsertId();
+                }
 
                 $stockStatement = $pdo->prepare(
                     'UPDATE tbl_produk
                      SET stok = stok - :jumlah
                      WHERE id_produk = :id AND stok >= :stok_minimum'
                 );
-                $detailStatement = $pdo->prepare(
+                $detailStatement = $paymentMethod === 'qris'
+                    ? $pdo->prepare(
+                        'INSERT INTO tbl_qris_order_detail
+                            (id_qris_order, id_produk, jumlah, harga_satuan, diskon, subtotal)
+                         VALUES
+                            (:id_order, :id_produk, :jumlah, :harga_satuan, :diskon, :subtotal)'
+                    )
+                    : $pdo->prepare(
                     'INSERT INTO tbl_detail_transaksi
                         (id_transaksi, id_produk, jumlah, harga_satuan, diskon, subtotal)
                      VALUES
-                        (:id_transaksi, :id_produk, :jumlah, :harga_satuan, 0.00, :subtotal)'
-                );
+                        (:id_transaksi, :id_produk, :jumlah, :harga_satuan, :diskon, :subtotal)'
+                    );
 
                 foreach ($items as $item) {
                     $stockStatement->execute([
@@ -373,25 +539,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new DomainException('Stok berubah saat transaksi diproses. Silakan coba kembali.');
                     }
 
-                    $detailStatement->execute([
-                        'id_transaksi' => $transactionId,
+                    $detailParameters = [
                         'id_produk' => $item['id_produk'],
                         'jumlah' => $item['jumlah'],
                         'harga_satuan' => $item['harga_satuan'],
+                        'diskon' => $item['diskon'],
                         'subtotal' => $item['subtotal'],
-                    ]);
+                    ];
+                    if ($paymentMethod === 'qris') {
+                        $detailParameters['id_order'] = $qrisOrderId;
+                    } else {
+                        $detailParameters['id_transaksi'] = $transactionId;
+                    }
+                    $detailStatement->execute($detailParameters);
                 }
 
                 $pdo->commit();
-                $_SESSION['kasir_cart'] = [];
-                $_SESSION['kasir_form'] = [
-                    'id_pelanggan' => '',
-                    'tanggal' => date('Y-m-d'),
-                    'uang_diterima' => '',
-                ];
-                setFlash('success', 'Transaksi berhasil disimpan.');
-                header('Location: index.php?page=struk&id=' . $transactionId);
-                exit;
             } catch (DomainException $exception) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
@@ -414,6 +577,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $formErrors[] = 'Nilai produk atau total transaksi tidak valid.';
             }
+
+            if ($formErrors === [] && $paymentMethod === 'qris'
+                && $qrisOrderId !== null && $midtransOrderId !== null) {
+                try {
+                    $midtransResponse = midtransCreateQrisPayment(
+                        $midtransOrderId,
+                        intdiv($totalCents, 100)
+                    );
+                    $qrCodeStatement = $pdo->prepare(
+                        'UPDATE tbl_qris_order
+                         SET midtrans_qr_url = :qr_url,
+                             midtrans_transaction_id = :transaction_id
+                         WHERE id_qris_order = :id_qris_order'
+                    );
+                    $qrCodeStatement->execute([
+                        'qr_url' => $midtransResponse['qr_code_url'],
+                        'transaction_id' => $midtransResponse['transaction_id'],
+                        'id_qris_order' => $qrisOrderId,
+                    ]);
+                } catch (RuntimeException $exception) {
+                    error_log('Membuat pembayaran QRIS gagal: ' . $exception->getMessage());
+                    try {
+                        midtransReleasePendingOrder($pdo, $midtransOrderId, 'failed');
+                    } catch (PDOException $releaseException) {
+                        error_log('Melepas stok pembayaran QRIS gagal: ' . $releaseException->getMessage());
+                        $formErrors[] = 'QRIS gagal dibuat dan stok belum dapat dikembalikan. Hubungi administrator.';
+                    }
+                    if ($formErrors === []) {
+                        try {
+                            $statusStatement = $pdo->prepare(
+                                'SELECT status_pembayaran
+                                 FROM tbl_qris_order
+                                 WHERE id_qris_order = :id_qris_order'
+                            );
+                            $statusStatement->execute(['id_qris_order' => $qrisOrderId]);
+                            $qrisStatus = $statusStatement->fetchColumn();
+                            if (!in_array($qrisStatus, ['paid', 'paid_unfulfilled'], true)) {
+                                $formErrors[] = $exception->getMessage();
+                            }
+                        } catch (PDOException $statusException) {
+                            error_log('Membaca status QRIS setelah error gagal: ' . $statusException->getMessage());
+                            $formErrors[] = 'Status QRIS tidak dapat diperiksa. Hubungi administrator.';
+                        }
+                    }
+                } catch (PDOException $exception) {
+                    error_log('Menyimpan gambar QRIS gagal: ' . $exception->getMessage());
+                    $formErrors[] = 'QRIS sudah dibuat tetapi gambar pembayaran gagal disimpan. Hubungi administrator.';
+                }
+            }
+
+            if ($formErrors === []
+                && (($paymentMethod === 'qris' && $qrisOrderId !== null)
+                    || ($paymentMethod !== 'qris' && $transactionId !== null))) {
+                $_SESSION['kasir_cart'] = [];
+                $_SESSION['kasir_form'] = [
+                    'id_pelanggan' => '',
+                    'tanggal' => date('Y-m-d'),
+                    'uang_diterima' => '',
+                    'metode_pembayaran' => 'tunai',
+                ];
+                if ($paymentMethod === 'qris') {
+                    header('Location: index.php?page=kasir_qris&id=' . $qrisOrderId);
+                    exit;
+                }
+
+                $paymentMethodLabel = $paymentMethod === 'member' ? 'saldo member' : 'tunai';
+                setFlash('success', 'Transaksi berhasil dibayar dengan ' . $paymentMethodLabel . '.');
+                header('Location: index.php?page=struk&id=' . $transactionId);
+                exit;
+            }
         }
     } else {
         $formErrors[] = 'Aksi kasir tidak dikenal.';
@@ -427,15 +660,31 @@ $products = [];
 $categories = [];
 $cartRows = [];
 $cartTotalCents = 0;
+$cartDiscountCents = 0;
+$cartPayableCents = 0;
+$selectedCustomerDiscountBasisPoints = 0;
+$selectedCustomerBalanceCents = 0;
+$cartBalanceUsedCents = 0;
+$cartPaymentDueCents = 0;
+$cartMemberBalanceAfterCents = 0;
 $cartTotalExceeded = false;
 $readError = null;
 
 try {
     $customers = $pdo->query(
-        'SELECT id_pelanggan, nama_pelanggan, kota
+        'SELECT id_pelanggan, nama_pelanggan, kota, diskon_persen, saldo
          FROM tbl_pelanggan
          ORDER BY nama_pelanggan, id_pelanggan'
     )->fetchAll();
+    foreach ($customers as $customer) {
+        if ($formState['id_pelanggan'] === (string) $customer['id_pelanggan']) {
+            $selectedCustomerDiscountBasisPoints = $percentageToBasisPoints(
+                $customer['diskon_persen']
+            );
+            $selectedCustomerBalanceCents = decimalToCents($customer['saldo']);
+            break;
+        }
+    }
 
     $products = $pdo->query(
         'SELECT p.id_produk, p.nama_produk, p.kode_produk, p.harga, p.stok, p.satuan,
@@ -506,6 +755,26 @@ try {
             ];
         }
     }
+
+    foreach ($cartRows as $row) {
+        if ($row['subtotal'] !== null) {
+            $cartDiscountCents += $discountCentsFor(
+                decimalToCents($row['subtotal']),
+                $selectedCustomerDiscountBasisPoints
+            );
+        }
+    }
+    $cartPayableCents = max(0, $cartTotalCents - $cartDiscountCents);
+    if ($formState['metode_pembayaran'] === 'member') {
+        $cartBalanceUsedCents = min($selectedCustomerBalanceCents, $cartPayableCents);
+    }
+    $cartPaymentDueCents = $formState['metode_pembayaran'] === 'member'
+        ? 0
+        : $cartPayableCents;
+    $cartMemberBalanceAfterCents = max(
+        0,
+        $selectedCustomerBalanceCents - $cartBalanceUsedCents
+    );
 } catch (PDOException $exception) {
     error_log('Memuat halaman kasir gagal: ' . $exception->getMessage());
     $readError = 'Data pelanggan atau produk gagal dibaca dari database.';
@@ -550,16 +819,40 @@ foreach ($cartRows as $row) {
                     <option value="">Tanpa pelanggan</option>
                     <?php foreach ($customers as $customer): ?>
                         <option value="<?= e($customer['id_pelanggan']) ?>"
+                            data-discount-basis-points="<?= e($percentageToBasisPoints($customer['diskon_persen'])) ?>"
+                            data-balance-cents="<?= e(decimalToCents($customer['saldo'])) ?>"
                             <?= $formState['id_pelanggan'] === (string) $customer['id_pelanggan'] ? 'selected' : '' ?>>
                             <?= e($customer['nama_pelanggan'] ?: 'Pelanggan') ?>
-                            (<?= e($customer['kota'] ?? '-') ?>)
+                            (<?= e($customer['kota'] ?? '-') ?> · diskon <?= e(number_format((float) $customer['diskon_persen'], 2, ',', '.')) ?>% · saldo <?= e(formatRupiah($customer['saldo'])) ?>)
                         </option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div>
+                <label for="metode_pembayaran">Metode Pembayaran</label>
+                <select id="metode_pembayaran" name="metode_pembayaran">
+                    <option value="tunai" <?= $formState['metode_pembayaran'] === 'tunai' ? 'selected' : '' ?>>Tunai</option>
+                    <option value="qris" <?= $formState['metode_pembayaran'] === 'qris' ? 'selected' : '' ?>>QRIS (Midtrans)</option>
+                    <option value="member" <?= $formState['metode_pembayaran'] === 'member' ? 'selected' : '' ?>>Saldo Member</option>
+                </select>
+            </div>
+            <div>
                 <label for="tanggal">Tanggal Transaksi</label>
                 <input id="tanggal" name="tanggal" type="date" required value="<?= e($formState['tanggal']) ?>">
+            </div>
+            <div style="grid-column:1 / -1;">
+                <label for="member-rfid-input">Pilih pelanggan dengan kartu member RFID</label>
+                <div class="pos-barcode-entry">
+                    <input type="text" id="member-rfid-input" name="uid_member"
+                           maxlength="64" autocomplete="off" autocapitalize="characters"
+                           spellcheck="false" placeholder="Arahkan kartu ke reader RFID"
+                           value="<?= e($memberCardValue) ?>">
+                    <button class="button button-secondary" id="member-rfid-submit"
+                            type="submit" name="aksi" value="scan_member_rfid" formnovalidate>
+                        Baca Kartu Member
+                    </button>
+                </div>
+                <p class="input-hint">Pastikan UID kartu sudah didaftarkan pada data pelanggan.</p>
             </div>
         </div>
 
@@ -714,7 +1007,8 @@ foreach ($cartRows as $row) {
         <?php else: ?>
             <div class="pos-cart-items">
                 <?php foreach ($cartRows as $item): ?>
-                    <div class="pos-cart-item">
+                    <div class="pos-cart-item"
+                         data-subtotal-cents="<?= e($item['subtotal'] === null ? 0 : decimalToCents($item['subtotal'])) ?>">
                         <div class="pos-item-meta">
                             <span class="pos-item-name"><?= e($item['nama_produk']) ?></span>
                             <span class="pos-item-price"><?= $item['harga_satuan'] === null ? '—' : e(formatRupiah($item['harga_satuan'])) ?> / <?= e($item['satuan']) ?></span>
@@ -749,21 +1043,53 @@ foreach ($cartRows as $row) {
             <!-- Ringkasan & Kalkulator Kembalian Kasir -->
             <div class="pos-cart-footer">
                 <div class="pos-total-row">
+                    <span class="pos-total-label">
+                        Diskon Pelanggan (<span id="pos-discount-rate"><?= e(number_format($selectedCustomerDiscountBasisPoints / 100, 2, ',', '.')) ?></span>%)
+                    </span>
+                    <span class="pos-total-amount" id="pos-discount-amount">
+                        <?= e(formatRupiah(centsToDecimal($cartDiscountCents))) ?>
+                    </span>
+                </div>
+                <div class="pos-total-row">
                     <span class="pos-total-label">Grand Total</span>
                     <span class="pos-total-amount" id="pos-grand-total">
-                        <?= $cartTotalExceeded ? 'Melebihi Batas' : e(formatRupiah(centsToDecimal($cartTotalCents))) ?>
+                        <?= $cartTotalExceeded ? 'Melebihi Batas' : e(formatRupiah(centsToDecimal($cartPayableCents))) ?>
+                    </span>
+                </div>
+                <div class="pos-total-row">
+                    <span class="pos-total-label" id="pos-payment-balance-label">Saldo member digunakan</span>
+                    <span class="pos-total-amount" id="pos-balance-used">
+                        <?= e(formatRupiah(centsToDecimal($cartBalanceUsedCents))) ?>
+                    </span>
+                </div>
+                <div class="pos-total-row">
+                    <span class="pos-total-label" id="pos-payment-due-label">
+                        <?= $formState['metode_pembayaran'] === 'qris'
+                            ? 'Dibayar via QRIS'
+                            : ($formState['metode_pembayaran'] === 'member' ? 'Saldo tersisa setelah transaksi' : 'Dibayar tunai') ?>
+                    </span>
+                    <span class="pos-total-amount" id="pos-payment-due">
+                        <?= e(formatRupiah(centsToDecimal(
+                            $formState['metode_pembayaran'] === 'member'
+                                ? $cartMemberBalanceAfterCents
+                                : $cartPaymentDueCents
+                        ))) ?>
                     </span>
                 </div>
 
                 <!-- Kalkulator Kembalian Kasir -->
-                <div class="pos-calc-box" data-total-cents="<?= e($cartTotalCents) ?>">
-                    <div class="pos-calc-row">
-                        <label for="pos-cash-input">Uang Diterima (Rp)</label>
+                <div class="pos-calc-box"
+                     data-total-cents="<?= e($cartPayableCents) ?>"
+                     data-payment-due-cents="<?= e($cartPaymentDueCents) ?>"
+                     data-gross-total-cents="<?= e($cartTotalCents) ?>">
+                    <div class="pos-calc-row" id="pos-cash-input-row">
+                        <label for="pos-cash-input">Uang Tunai Diterima (Rp)</label>
                         <input type="text" id="pos-cash-input" name="uang_diterima" class="pos-cash-input"
                                placeholder="0" inputmode="numeric" autocomplete="off"
+                               <?= $formState['metode_pembayaran'] === 'tunai' ? 'required' : '' ?>
                                value="<?= e($formState['uang_diterima']) ?>">
                     </div>
-                    <div class="pos-quick-cash">
+                    <div class="pos-quick-cash" id="pos-quick-cash">
                         <button type="button" class="pos-cash-chip" data-quick="exact">Uang Pas</button>
                         <button type="button" class="pos-cash-chip" data-quick="10000">+10k</button>
                         <button type="button" class="pos-cash-chip" data-quick="20000">+20k</button>
@@ -775,6 +1101,8 @@ foreach ($cartRows as $row) {
                         <strong id="pos-change-val">Rp 0</strong>
                     </div>
                 </div>
+                <p class="input-hint" id="pos-payment-note" role="status"></p>
+                <div class="alert alert-error" id="pos-member-shortfall" role="alert" hidden></div>
 
                 <div class="pos-cart-actions">
                     <button class="button button-secondary" type="submit" name="aksi" value="kosongkan"
@@ -801,6 +1129,9 @@ foreach ($cartRows as $row) {
     var searchInput = document.getElementById('pos-search');
     var barcodeInput = document.getElementById('pos-barcode-input');
     var barcodeSubmit = document.getElementById('pos-barcode-submit');
+    var memberInput = document.getElementById('member-rfid-input');
+    var memberSubmit = document.getElementById('member-rfid-submit');
+    var customerSelect = document.getElementById('id_pelanggan');
     var grid = document.getElementById('pos-grid');
     var chips = document.querySelectorAll('#pos-category-chips .pos-chip');
     var activeCategory = 'all';
@@ -831,6 +1162,15 @@ foreach ($cartRows as $row) {
                 event.preventDefault();
                 window.clearTimeout(barcodeSubmitTimer);
                 submitScannedBarcode();
+            }
+        });
+    }
+
+    if (memberInput && memberSubmit) {
+        memberInput.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                memberSubmit.click();
             }
         });
     }
@@ -893,9 +1233,23 @@ foreach ($cartRows as $row) {
     var cashInput = document.getElementById('pos-cash-input');
     var changeVal = document.getElementById('pos-change-val');
     var changeRow = document.getElementById('pos-change-display');
+    var discountRate = document.getElementById('pos-discount-rate');
+    var discountAmount = document.getElementById('pos-discount-amount');
+    var grandTotal = document.getElementById('pos-grand-total');
+    var balanceUsedDisplay = document.getElementById('pos-balance-used');
+    var paymentDueLabel = document.getElementById('pos-payment-due-label');
+    var paymentDueDisplay = document.getElementById('pos-payment-due');
+    var paymentMethodSelect = document.getElementById('metode_pembayaran');
+    var cashInputRow = document.getElementById('pos-cash-input-row');
+    var quickCashRow = document.getElementById('pos-quick-cash');
+    var paymentNote = document.getElementById('pos-payment-note');
+    var memberShortfall = document.getElementById('pos-member-shortfall');
 
     if (calcBox && cashInput && changeVal && changeRow) {
         var totalCents = parseInt(calcBox.getAttribute('data-total-cents') || '0', 10);
+        var grossTotalCents = parseInt(calcBox.getAttribute('data-gross-total-cents') || '0', 10);
+        var customerBalanceCents = 0;
+        var cashDueCents = totalCents;
 
         function formatRupiahJs(cents) {
             var whole = Math.floor(cents / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -903,7 +1257,104 @@ foreach ($cartRows as $row) {
             return 'Rp ' + whole + ',' + fraction;
         }
 
+        function updatePaymentMethod() {
+            var method = paymentMethodSelect ? paymentMethodSelect.value : 'tunai';
+            var balanceUsedCents = method === 'member'
+                ? Math.min(customerBalanceCents, totalCents)
+                : 0;
+            cashDueCents = method === 'tunai' ? totalCents : 0;
+            calcBox.setAttribute(
+                'data-payment-due-cents',
+                (method === 'member' ? 0 : totalCents).toString()
+            );
+            if (balanceUsedDisplay) {
+                balanceUsedDisplay.textContent = formatRupiahJs(balanceUsedCents);
+            }
+            if (paymentDueLabel && paymentDueDisplay) {
+                if (method === 'qris') {
+                    paymentDueLabel.textContent = 'Dibayar via QRIS';
+                    paymentDueDisplay.textContent = formatRupiahJs(totalCents);
+                } else if (method === 'member') {
+                    paymentDueLabel.textContent = 'Saldo tersisa setelah transaksi';
+                    paymentDueDisplay.textContent = formatRupiahJs(
+                        Math.max(0, customerBalanceCents - balanceUsedCents)
+                    );
+                } else {
+                    paymentDueLabel.textContent = 'Dibayar tunai';
+                    paymentDueDisplay.textContent = formatRupiahJs(totalCents);
+                }
+            }
+
+            var isCash = method === 'tunai';
+            if (cashInputRow) {
+                cashInputRow.style.display = isCash ? '' : 'none';
+            }
+            if (quickCashRow) {
+                quickCashRow.style.display = isCash ? '' : 'none';
+            }
+            changeRow.style.display = isCash ? '' : 'none';
+            cashInput.required = isCash;
+            cashInput.disabled = !isCash;
+            if (!isCash) {
+                cashInput.value = '';
+            }
+
+            if (paymentNote) {
+                paymentNote.textContent = method === 'qris'
+                    ? 'QRIS dibuat melalui Midtrans. Stok ditahan sampai pembayaran selesai atau kedaluwarsa.'
+                    : (method === 'member'
+                        ? 'Pembayaran member menggunakan seluruh saldo yang diperlukan; saldo harus mencukupi total.'
+                        : 'Masukkan uang tunai yang diterima pelanggan.');
+            }
+
+            if (memberShortfall) {
+                var noCustomer = !customerSelect || customerSelect.value === '';
+                var insufficient = customerBalanceCents < totalCents;
+                var showShortfall = method === 'member' && (noCustomer || insufficient);
+                memberShortfall.hidden = !showShortfall;
+                memberShortfall.style.display = showShortfall ? '' : 'none';
+                memberShortfall.textContent = noCustomer
+                    ? 'Pilih pelanggan untuk menggunakan saldo member.'
+                    : 'Saldo member tidak mencukupi untuk membayar seluruh transaksi.';
+            }
+            updateChange();
+        }
+
+        function updateCustomerDiscount() {
+            var selectedOption = customerSelect ? customerSelect.options[customerSelect.selectedIndex] : null;
+            var basisPoints = selectedOption
+                ? parseInt(selectedOption.getAttribute('data-discount-basis-points') || '0', 10)
+                : 0;
+            customerBalanceCents = selectedOption
+                ? parseInt(selectedOption.getAttribute('data-balance-cents') || '0', 10)
+                : 0;
+            var totalDiscountCents = 0;
+            var cartItems = document.querySelectorAll('.pos-cart-item[data-subtotal-cents]');
+
+            for (var i = 0; i < cartItems.length; i++) {
+                var lineCents = parseInt(cartItems[i].getAttribute('data-subtotal-cents') || '0', 10);
+                totalDiscountCents += Math.floor(lineCents / 10000) * basisPoints
+                    + Math.floor(((lineCents % 10000) * basisPoints + 5000) / 10000);
+            }
+
+            totalCents = Math.max(0, grossTotalCents - totalDiscountCents);
+            calcBox.setAttribute('data-total-cents', totalCents.toString());
+            if (discountRate) {
+                discountRate.textContent = (basisPoints / 100).toFixed(2).replace('.', ',');
+            }
+            if (discountAmount) {
+                discountAmount.textContent = formatRupiahJs(totalDiscountCents);
+            }
+            if (grandTotal) {
+                grandTotal.textContent = formatRupiahJs(totalCents);
+            }
+            updatePaymentMethod();
+        }
+
         function updateChange() {
+            if (!paymentMethodSelect || paymentMethodSelect.value !== 'tunai') {
+                return;
+            }
             var rawVal = cashInput.value.replace(/[^0-9]/g, '');
             var cashCents = rawVal ? parseInt(rawVal, 10) * 100 : 0;
 
@@ -913,7 +1364,7 @@ foreach ($cartRows as $row) {
                 return;
             }
 
-            var diff = cashCents - totalCents;
+            var diff = cashCents - cashDueCents;
             if (diff >= 0) {
                 changeRow.className = 'pos-change-row has-change';
                 changeRow.firstElementChild.textContent = 'Kembalian';
@@ -923,6 +1374,13 @@ foreach ($cartRows as $row) {
                 changeRow.firstElementChild.textContent = 'Kurang';
                 changeVal.textContent = formatRupiahJs(Math.abs(diff));
             }
+        }
+
+        if (customerSelect) {
+            customerSelect.addEventListener('change', updateCustomerDiscount);
+        }
+        if (paymentMethodSelect) {
+            paymentMethodSelect.addEventListener('change', updatePaymentMethod);
         }
 
         cashInput.addEventListener('input', function () {
@@ -941,7 +1399,7 @@ foreach ($cartRows as $row) {
             btn.addEventListener('click', function () {
                 var q = this.getAttribute('data-quick');
                 if (q === 'exact') {
-                    var exactCash = Math.ceil(totalCents / 100);
+                    var exactCash = Math.ceil(cashDueCents / 100);
                     cashInput.value = exactCash.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
                 } else {
                     var addVal = parseFloat(q);
@@ -952,6 +1410,7 @@ foreach ($cartRows as $row) {
                 updateChange();
             });
         });
+        updateCustomerDiscount();
     }
 
     // Fokuskan input barcode agar kasir siap memindai produk berikutnya.

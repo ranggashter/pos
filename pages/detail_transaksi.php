@@ -21,6 +21,7 @@ if ($transactionId === false) {
     try {
         $statement = $pdo->prepare(
             'SELECT t.id_transaksi, t.tanggal, t.id_pelanggan, t.total_belanja,
+                    t.metode_pembayaran, t.status_pembayaran,
                     p.nama_pelanggan, p.kota
              FROM tbl_transaksi t
              LEFT JOIN tbl_pelanggan p ON p.id_pelanggan = t.id_pelanggan
@@ -87,6 +88,14 @@ if ($transactionId === false) {
             <div>
                 <dt>Total Belanja</dt>
                 <dd style="color:var(--primary-700);font-size:1.15rem;"><?= e(formatRupiah($transaction['total_belanja'])) ?></dd>
+            </div>
+            <div>
+                <dt>Metode Pembayaran</dt>
+                <dd><?= e($transaction['metode_pembayaran'] === 'qris' ? 'QRIS' : ($transaction['metode_pembayaran'] === 'member' ? 'Saldo member' : 'Tunai')) ?></dd>
+            </div>
+            <div>
+                <dt>Status Pembayaran</dt>
+                <dd><?= e($transaction['status_pembayaran'] === 'reversed' ? 'Dibatalkan/dikembalikan' : 'Lunas') ?></dd>
             </div>
         </dl>
 
