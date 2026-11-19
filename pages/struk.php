@@ -26,7 +26,7 @@ if ($transactionId === false) {
         $statement = $pdo->prepare(
             'SELECT t.id_transaksi, t.tanggal, t.id_pelanggan, t.total_belanja,
                     t.uang_diterima, t.saldo_digunakan, t.metode_pembayaran,
-                    t.status_pembayaran,
+                    t.status_pembayaran, t.duitku_order_id, t.duitku_payment_name,
                     p.nama_pelanggan, p.kota
              FROM tbl_transaksi t
              LEFT JOIN tbl_pelanggan p ON p.id_pelanggan = t.id_pelanggan
@@ -63,12 +63,14 @@ if ($transactionId === false) {
                         throw new DomainException('Saldo digunakan melebihi total belanja.');
                     }
 
-                    if ($paymentMethod === 'qris') {
+                    if ($paymentMethod === 'qris' || !empty($transaction['duitku_order_id'])) {
                         $paymentSummary = [
-                            'method' => 'QRIS Midtrans',
+                            'method' => !empty($transaction['duitku_payment_name'])
+                                ? (string) $transaction['duitku_payment_name']
+                                : ($paymentMethod === 'qris' ? 'QRIS Duitku' : 'Duitku'),
                             'status' => $paymentStatusLabels[$paymentStatus],
                             'balance' => $transaction['saldo_digunakan'],
-                            'amount_label' => 'Nilai QRIS',
+                            'amount_label' => 'Pembayaran diterima',
                             'amount' => $transaction['total_belanja'],
                             'change' => '0.00',
                         ];

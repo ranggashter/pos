@@ -413,6 +413,23 @@ h3 {
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
+.qris-code-frame {
+    display: flex;
+    justify-content: center;
+    margin: 16px auto 24px;
+}
+
+.qris-code {
+    display: block;
+    width: min(100%, 320px);
+    height: auto;
+    aspect-ratio: 1;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: #fff;
+    object-fit: contain;
+}
+
 .section-heading {
     display: flex;
     align-items: center;

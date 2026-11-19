@@ -38,6 +38,7 @@ function takeFlash(): ?array
 function redirectToMaster(string $page = 'pelanggan'): never
 {
     if (!in_array($page, [
+        'dashboard_pelanggan',
         'pelanggan',
         'kategori',
         'produk',

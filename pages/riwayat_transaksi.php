@@ -193,12 +193,20 @@ try {
                 </thead>
                 <tbody>
                 <?php foreach ($transactions as $transaction): ?>
+                    <?php
+                    $paymentMethodLabel = match ($transaction['metode_pembayaran']) {
+                        'qris' => 'QRIS',
+                        'member' => 'Member',
+                        'tunai' => 'Tunai',
+                        default => (string) $transaction['metode_pembayaran'],
+                    };
+                    ?>
                     <tr>
                         <td><span style="font-family:var(--font-mono);font-size:0.85rem;font-weight:700;color:var(--primary-700);">#<?= e($transaction['id_transaksi']) ?></span></td>
                         <td><span style="font-size:0.88rem;color:var(--text-body);"><?= e(date('d M Y', strtotime($transaction['tanggal']))) ?></span></td>
                         <td><strong><?= e($transaction['nama_pelanggan'] ?? 'Tanpa pelanggan') ?></strong></td>
                         <td><span style="display:inline-block;padding:2px 8px;border-radius:var(--radius-pill);background:var(--surface-subtle);border:1px solid var(--border-subtle);font-size:0.8rem;font-weight:600;"><?= e($transaction['kota'] ?? '—') ?></span></td>
-                        <td><?= e($transaction['metode_pembayaran'] === 'qris' ? 'QRIS' : ($transaction['metode_pembayaran'] === 'member' ? 'Member' : 'Tunai')) ?></td>
+                        <td><?= e($paymentMethodLabel) ?></td>
                         <td><?= e($transaction['status_pembayaran'] === 'reversed' ? 'Dibatalkan/dikembalikan' : 'Lunas') ?></td>
                         <td><span style="font-weight:700;color:var(--primary-700);"><?= e(formatRupiah($transaction['total_belanja'])) ?></span></td>
                         <td class="no-print">

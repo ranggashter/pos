@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 return (static function (): PDO {
     $host = '127.0.0.1';
-    $database = 'db_tokokita';
+    $database = 'toko1';
     $username = 'root';
     $password = '';
     $dsn = "mysql:host={$host};dbname={$database};charset=utf8mb4";

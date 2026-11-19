@@ -6,7 +6,7 @@ if (!defined('APP_BOOTSTRAPPED')) {
     exit;
 }
 
-require_once __DIR__ . '/../includes/midtrans.php';
+require_once __DIR__ . '/../includes/duitku.php';
 
 $getId = static function (mixed $value): ?int {
     $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -61,11 +61,14 @@ $formState['tanggal'] = is_string($formState['tanggal'] ?? null)
 $formState['uang_diterima'] = is_scalar($formState['uang_diterima'] ?? null)
     ? (string) $formState['uang_diterima']
     : '';
-$formState['metode_pembayaran'] = in_array(
-    $formState['metode_pembayaran'] ?? null,
-    ['tunai', 'qris', 'member'],
-    true
-) ? $formState['metode_pembayaran'] : 'tunai';
+$savedPaymentMethod = $formState['metode_pembayaran'] ?? null;
+if ($savedPaymentMethod === 'qris') {
+    $savedPaymentMethod = 'SP';
+}
+$formState['metode_pembayaran'] = in_array($savedPaymentMethod, ['tunai', 'member'], true)
+    || (is_string($savedPaymentMethod) && duitkuGetChannelInfo($savedPaymentMethod) !== null)
+        ? $savedPaymentMethod
+        : 'tunai';
 $formErrors = [];
 $barcodeValue = '';
 $memberCardValue = '';
@@ -90,6 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         && is_string($_POST['metode_pembayaran'])
             ? $_POST['metode_pembayaran']
             : '';
+    if ($postedPaymentMethod === 'qris') {
+        $postedPaymentMethod = 'SP';
+    }
     $barcodeValue = isset($_POST['kode_barcode']) && is_string($_POST['kode_barcode'])
         ? trim($_POST['kode_barcode'])
         : '';
@@ -286,12 +292,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'simpan') {
         $customerId = $postedCustomer === '' ? null : $getId($postedCustomer);
         $paymentMethod = $postedPaymentMethod;
+        $duitkuChannel = duitkuGetChannelInfo($paymentMethod);
+        $isDuitkuPayment = $duitkuChannel !== null;
+        $duitkuChannelCode = $isDuitkuPayment ? $duitkuChannel['code'] : null;
         $cashCents = 0;
         $cashDigits = null;
         if ($postedCustomer !== '' && $customerId === null) {
             $formErrors[] = 'Pelanggan yang dipilih tidak valid.';
         }
-        if (!in_array($paymentMethod, ['tunai', 'qris', 'member'], true)) {
+        if (!in_array($paymentMethod, ['tunai', 'member'], true) && !$isDuitkuPayment) {
             $formErrors[] = 'Pilih metode pembayaran yang valid.';
         }
         if ($paymentMethod === 'tunai') {
@@ -311,11 +320,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-        if ($paymentMethod === 'qris') {
+        if ($isDuitkuPayment) {
             try {
-                midtransServerKey();
+                duitkuMerchantCode();
+                duitkuApiKey();
             } catch (RuntimeException $exception) {
-                $formErrors[] = 'Pembayaran QRIS belum dikonfigurasi oleh administrator.';
+                $formErrors[] = 'Pembayaran Duitku belum dikonfigurasi oleh administrator.';
             }
         }
         if (!$isValidDate($postedDate)) {
@@ -335,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $balanceUsedCents = 0;
             $transactionId = null;
             $qrisOrderId = null;
-            $midtransOrderId = null;
+            $duitkuOrderId = null;
             try {
                 $pdo->beginTransaction();
 
@@ -435,15 +445,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $balanceUsedCents = $totalCents;
                 }
-                if ($paymentMethod === 'qris') {
+                if ($isDuitkuPayment) {
                     if ($totalCents <= 0 || $totalCents % 100 !== 0) {
-                        throw new DomainException('Total QRIS harus minimal Rp1 dan tanpa pecahan Rupiah.');
+                        throw new DomainException('Total pembayaran Duitku harus minimal Rp1 dan tanpa pecahan Rupiah.');
                     }
                     try {
-                        $midtransOrderId = 'TK-' . date('YmdHis') . '-' . bin2hex(random_bytes(6));
+                        $duitkuOrderId = 'TK-' . date('YmdHis') . '-' . bin2hex(random_bytes(6));
                     } catch (Exception $exception) {
-                        error_log('Membuat ID order QRIS gagal: ' . $exception->getMessage());
-                        throw new DomainException('ID pembayaran QRIS tidak dapat dibuat.');
+                        error_log('Membuat ID order Duitku gagal: ' . $exception->getMessage());
+                        throw new DomainException('ID pembayaran Duitku tidak dapat dibuat.');
                     }
                 }
 
@@ -463,13 +473,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                if ($paymentMethod === 'qris') {
+                if ($isDuitkuPayment) {
                     $qrisOrderStatement = $pdo->prepare(
                         'INSERT INTO tbl_qris_order
-                            (midtrans_order_id, tanggal, id_pelanggan, total_belanja)
-                         VALUES (:order_id, :tanggal, :id_pelanggan, :total)'
+                            (duitku_order_id, tanggal, id_pelanggan, total_belanja,
+                             duitku_channel, duitku_payment_name)
+                         VALUES (:order_id, :tanggal, :id_pelanggan, :total,
+                                 :duitku_channel, :duitku_payment_name)'
                     );
-                    $qrisOrderStatement->bindValue(':order_id', $midtransOrderId, PDO::PARAM_STR);
+                    $qrisOrderStatement->bindValue(':order_id', $duitkuOrderId, PDO::PARAM_STR);
                     $qrisOrderStatement->bindValue(':tanggal', $postedDate, PDO::PARAM_STR);
                     $qrisOrderStatement->bindValue(
                         ':id_pelanggan',
@@ -477,6 +489,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $customerId === null ? PDO::PARAM_NULL : PDO::PARAM_INT
                     );
                     $qrisOrderStatement->bindValue(':total', centsToDecimal($totalCents), PDO::PARAM_STR);
+                    $qrisOrderStatement->bindValue(':duitku_channel', $duitkuChannelCode, PDO::PARAM_STR);
+                    $qrisOrderStatement->bindValue(':duitku_payment_name', $duitkuChannel['name'], PDO::PARAM_STR);
                     $qrisOrderStatement->execute();
                     $qrisOrderId = (int) $pdo->lastInsertId();
                 } else {
@@ -515,7 +529,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      SET stok = stok - :jumlah
                      WHERE id_produk = :id AND stok >= :stok_minimum'
                 );
-                $detailStatement = $paymentMethod === 'qris'
+                $detailStatement = $isDuitkuPayment
                     ? $pdo->prepare(
                         'INSERT INTO tbl_qris_order_detail
                             (id_qris_order, id_produk, jumlah, harga_satuan, diskon, subtotal)
@@ -546,7 +560,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'diskon' => $item['diskon'],
                         'subtotal' => $item['subtotal'],
                     ];
-                    if ($paymentMethod === 'qris') {
+                    if ($isDuitkuPayment) {
                         $detailParameters['id_order'] = $qrisOrderId;
                     } else {
                         $detailParameters['id_transaksi'] = $transactionId;
@@ -578,31 +592,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $formErrors[] = 'Nilai produk atau total transaksi tidak valid.';
             }
 
-            if ($formErrors === [] && $paymentMethod === 'qris'
-                && $qrisOrderId !== null && $midtransOrderId !== null) {
+            if ($formErrors === [] && $isDuitkuPayment
+                && $qrisOrderId !== null && $duitkuOrderId !== null) {
                 try {
-                    $midtransResponse = midtransCreateQrisPayment(
-                        $midtransOrderId,
-                        intdiv($totalCents, 100)
+                    $customerName = isset($selectedCustomer) && is_array($selectedCustomer)
+                        ? ($selectedCustomer['nama_pelanggan'] ?? null)
+                        : null;
+                    $duitkuResponse = duitkuCreatePayment(
+                        $duitkuOrderId,
+                        intdiv($totalCents, 100),
+                        $duitkuChannelCode,
+                        $customerName
                     );
                     $qrCodeStatement = $pdo->prepare(
                         'UPDATE tbl_qris_order
-                         SET midtrans_qr_url = :qr_url,
-                             midtrans_transaction_id = :transaction_id
+                         SET duitku_reference = :reference,
+                             duitku_payment_url = :payment_url,
+                             duitku_qr_string = :qr_string,
+                             duitku_qr_url = :qr_url,
+                             duitku_va_number = :va_number,
+                             duitku_payment_code = :payment_code,
+                             duitku_payment_name = :payment_name
                          WHERE id_qris_order = :id_qris_order'
                     );
                     $qrCodeStatement->execute([
-                        'qr_url' => $midtransResponse['qr_code_url'],
-                        'transaction_id' => $midtransResponse['transaction_id'],
+                        'reference' => $duitkuResponse['reference'],
+                        'payment_url' => $duitkuResponse['payment_url'],
+                        'qr_string' => $duitkuResponse['qr_string'],
+                        'qr_url' => $duitkuResponse['qr_code_url'],
+                        'va_number' => $duitkuResponse['va_number'],
+                        'payment_code' => $duitkuResponse['payment_code'],
+                        'payment_name' => $duitkuResponse['payment_name'],
                         'id_qris_order' => $qrisOrderId,
                     ]);
                 } catch (RuntimeException $exception) {
-                    error_log('Membuat pembayaran QRIS gagal: ' . $exception->getMessage());
+                    error_log('Membuat pembayaran Duitku gagal: ' . $exception->getMessage());
                     try {
-                        midtransReleasePendingOrder($pdo, $midtransOrderId, 'failed');
+                        duitkuReleasePendingOrder($pdo, $duitkuOrderId, 'failed');
                     } catch (PDOException $releaseException) {
-                        error_log('Melepas stok pembayaran QRIS gagal: ' . $releaseException->getMessage());
-                        $formErrors[] = 'QRIS gagal dibuat dan stok belum dapat dikembalikan. Hubungi administrator.';
+                        error_log('Melepas stok pembayaran Duitku gagal: ' . $releaseException->getMessage());
+                        $formErrors[] = 'Pembayaran gagal dibuat dan stok belum dapat dikembalikan. Hubungi administrator.';
                     }
                     if ($formErrors === []) {
                         try {
@@ -617,19 +646,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $formErrors[] = $exception->getMessage();
                             }
                         } catch (PDOException $statusException) {
-                            error_log('Membaca status QRIS setelah error gagal: ' . $statusException->getMessage());
-                            $formErrors[] = 'Status QRIS tidak dapat diperiksa. Hubungi administrator.';
+                            error_log('Membaca status Duitku setelah error gagal: ' . $statusException->getMessage());
+                            $formErrors[] = 'Status pembayaran tidak dapat diperiksa. Hubungi administrator.';
                         }
                     }
                 } catch (PDOException $exception) {
-                    error_log('Menyimpan gambar QRIS gagal: ' . $exception->getMessage());
-                    $formErrors[] = 'QRIS sudah dibuat tetapi gambar pembayaran gagal disimpan. Hubungi administrator.';
+                    error_log('Menyimpan detail pembayaran Duitku gagal: ' . $exception->getMessage());
+                    $formErrors[] = 'Invoice sudah dibuat tetapi detail pembayaran gagal disimpan. Hubungi administrator.';
                 }
             }
 
             if ($formErrors === []
-                && (($paymentMethod === 'qris' && $qrisOrderId !== null)
-                    || ($paymentMethod !== 'qris' && $transactionId !== null))) {
+                && (($isDuitkuPayment && $qrisOrderId !== null)
+                    || (!$isDuitkuPayment && $transactionId !== null))) {
                 $_SESSION['kasir_cart'] = [];
                 $_SESSION['kasir_form'] = [
                     'id_pelanggan' => '',
@@ -637,7 +666,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'uang_diterima' => '',
                     'metode_pembayaran' => 'tunai',
                 ];
-                if ($paymentMethod === 'qris') {
+                if ($isDuitkuPayment) {
                     header('Location: index.php?page=kasir_qris&id=' . $qrisOrderId);
                     exit;
                 }
@@ -832,7 +861,18 @@ foreach ($cartRows as $row) {
                 <label for="metode_pembayaran">Metode Pembayaran</label>
                 <select id="metode_pembayaran" name="metode_pembayaran">
                     <option value="tunai" <?= $formState['metode_pembayaran'] === 'tunai' ? 'selected' : '' ?>>Tunai</option>
-                    <option value="qris" <?= $formState['metode_pembayaran'] === 'qris' ? 'selected' : '' ?>>QRIS (Midtrans)</option>
+                    <?php foreach (duitkuChannelCategories() as $category): ?>
+                        <optgroup label="<?= e($category['label']) ?>">
+                            <?php foreach ($category['channels'] as $channel): ?>
+                                <option value="<?= e($channel['code']) ?>"
+                                    data-duitku="1"
+                                    data-payment-label="<?= e($channel['name']) ?>"
+                                    <?= $formState['metode_pembayaran'] === $channel['code'] ? 'selected' : '' ?>>
+                                    <?= e($channel['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </optgroup>
+                    <?php endforeach; ?>
                     <option value="member" <?= $formState['metode_pembayaran'] === 'member' ? 'selected' : '' ?>>Saldo Member</option>
                 </select>
             </div>
@@ -1064,8 +1104,9 @@ foreach ($cartRows as $row) {
                 </div>
                 <div class="pos-total-row">
                     <span class="pos-total-label" id="pos-payment-due-label">
-                        <?= $formState['metode_pembayaran'] === 'qris'
-                            ? 'Dibayar via QRIS'
+                        <?php $selectedDuitkuChannel = duitkuGetChannelInfo($formState['metode_pembayaran']); ?>
+                        <?= $selectedDuitkuChannel !== null
+                            ? 'Dibayar via ' . e($selectedDuitkuChannel['name'])
                             : ($formState['metode_pembayaran'] === 'member' ? 'Saldo tersisa setelah transaksi' : 'Dibayar tunai') ?>
                     </span>
                     <span class="pos-total-amount" id="pos-payment-due">
@@ -1259,6 +1300,13 @@ foreach ($cartRows as $row) {
 
         function updatePaymentMethod() {
             var method = paymentMethodSelect ? paymentMethodSelect.value : 'tunai';
+            var selectedOption = paymentMethodSelect
+                ? paymentMethodSelect.options[paymentMethodSelect.selectedIndex]
+                : null;
+            var isDuitku = selectedOption && selectedOption.getAttribute('data-duitku') === '1';
+            var paymentLabel = selectedOption
+                ? selectedOption.getAttribute('data-payment-label')
+                : '';
             var balanceUsedCents = method === 'member'
                 ? Math.min(customerBalanceCents, totalCents)
                 : 0;
@@ -1271,8 +1319,8 @@ foreach ($cartRows as $row) {
                 balanceUsedDisplay.textContent = formatRupiahJs(balanceUsedCents);
             }
             if (paymentDueLabel && paymentDueDisplay) {
-                if (method === 'qris') {
-                    paymentDueLabel.textContent = 'Dibayar via QRIS';
+                if (isDuitku) {
+                    paymentDueLabel.textContent = 'Dibayar via ' + paymentLabel;
                     paymentDueDisplay.textContent = formatRupiahJs(totalCents);
                 } else if (method === 'member') {
                     paymentDueLabel.textContent = 'Saldo tersisa setelah transaksi';
@@ -1300,8 +1348,8 @@ foreach ($cartRows as $row) {
             }
 
             if (paymentNote) {
-                paymentNote.textContent = method === 'qris'
-                    ? 'QRIS dibuat melalui Midtrans. Stok ditahan sampai pembayaran selesai atau kedaluwarsa.'
+                paymentNote.textContent = isDuitku
+                    ? 'Invoice ' + paymentLabel + ' dibuat melalui Duitku. Stok ditahan sampai pembayaran selesai atau kedaluwarsa.'
                     : (method === 'member'
                         ? 'Pembayaran member menggunakan seluruh saldo yang diperlukan; saldo harus mencukupi total.'
                         : 'Masukkan uang tunai yang diterima pelanggan.');

@@ -14,6 +14,7 @@ $transactionId = filter_var(
 $transaction = false;
 $items = [];
 $detailError = null;
+$paymentMethodLabel = '';
 
 if ($transactionId === false) {
     $detailError = 'ID transaksi tidak valid.';
@@ -32,6 +33,12 @@ if ($transactionId === false) {
         if ($transaction === false) {
             $detailError = 'Transaksi tidak ditemukan.';
         } else {
+            $paymentMethodLabel = match ($transaction['metode_pembayaran']) {
+                'qris' => 'QRIS',
+                'member' => 'Saldo member',
+                'tunai' => 'Tunai',
+                default => (string) $transaction['metode_pembayaran'],
+            };
             $itemStatement = $pdo->prepare(
                 'SELECT d.id_detail, d.id_produk, d.jumlah, d.harga_satuan, d.diskon, d.subtotal,
                         p.nama_produk, p.satuan
@@ -91,7 +98,7 @@ if ($transactionId === false) {
             </div>
             <div>
                 <dt>Metode Pembayaran</dt>
-                <dd><?= e($transaction['metode_pembayaran'] === 'qris' ? 'QRIS' : ($transaction['metode_pembayaran'] === 'member' ? 'Saldo member' : 'Tunai')) ?></dd>
+                <dd><?= e($paymentMethodLabel) ?></dd>
             </div>
             <div>
                 <dt>Status Pembayaran</dt>

@@ -1,4 +1,7 @@
 Options -Indexes
+SetEnv DUITKU_ENV sandbox
+SetEnv DUITKU_MERCHANT_CODE "DS38194"
+SetEnv DUITKU_API_KEY "ee752819ff55908e4f32654713bbe4a7"
 
 <IfModule mod_rewrite.c>
 RewriteEngine On

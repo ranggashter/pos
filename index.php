@@ -17,11 +17,13 @@ require __DIR__ . '/includes/auth.php';
 
 $page = $_GET['page'] ?? 'pelanggan';
 $allowedPages = [
+    'dashboard_pelanggan',
     'pelanggan',
     'kategori',
     'produk',
     'kasir',
     'struk',
+    'kasir_qris',
     'riwayat_transaksi',
     'detail_transaksi',
     'laporan',
@@ -81,11 +83,13 @@ if ($accessDenied) {
 }
 
 $pageTitles = [
+    'dashboard_pelanggan' => 'Dashboard Pelanggan',
     'pelanggan' => 'Master Pelanggan',
     'kategori' => 'Master Kategori',
     'produk' => 'Master Produk',
     'kasir' => 'Kasir (POS)',
     'struk' => 'Struk Transaksi',
+    'kasir_qris' => 'Pembayaran Duitku',
     'riwayat_transaksi' => 'Riwayat Transaksi',
     'detail_transaksi' => 'Detail Transaksi',
     'laporan' => 'Laporan Penjualan',
@@ -101,6 +105,204 @@ if ($routeError === null && !$accessDenied) {
         http_response_code(500);
         $connectionError = 'Koneksi database gagal. Pastikan MySQL/MariaDB aktif dan konfigurasi di config/database.php benar.';
     }
+}
+
+if ($page === 'kasir_qris' && ($_GET['status_json'] ?? null) === '1') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+
+    if ($accessDenied) {
+        http_response_code(403);
+        echo json_encode(['error' => 'forbidden']);
+        exit;
+    }
+    if (!($pdo instanceof PDO)) {
+        http_response_code(503);
+        echo json_encode(['error' => 'database_unavailable']);
+        exit;
+    }
+
+    $qrisOrderId = filter_var(
+        $_GET['id'] ?? null,
+        FILTER_VALIDATE_INT,
+        ['options' => ['min_range' => 1]]
+    );
+    if ($qrisOrderId === false) {
+        http_response_code(400);
+        echo json_encode(['error' => 'invalid_order_id']);
+        exit;
+    }
+
+    try {
+        $statusStatement = $pdo->prepare(
+            'SELECT id_qris_order, duitku_order_id,
+                    status_pembayaran, tanggal, id_pelanggan, total_belanja, id_transaksi
+             FROM tbl_qris_order
+             WHERE id_qris_order = :id'
+        );
+        $statusStatement->execute(['id' => $qrisOrderId]);
+        $qrisRow = $statusStatement->fetch();
+    } catch (PDOException $exception) {
+        error_log('Memeriksa status pembayaran otomatis gagal: ' . $exception->getMessage());
+        http_response_code(500);
+        echo json_encode(['error' => 'status_unavailable']);
+        exit;
+    }
+
+    if (!$qrisRow) {
+        http_response_code(404);
+        echo json_encode(['error' => 'order_not_found']);
+        exit;
+    }
+
+    $paymentStatus = (string) $qrisRow['status_pembayaran'];
+
+    // Jika masih pending dan Duitku terkonfigurasi, cek langsung ke API Duitku untuk sinkronisasi
+    if ($paymentStatus === 'pending') {
+        require_once __DIR__ . '/includes/duitku.php';
+        $orderId = !empty($qrisRow['duitku_order_id'])
+            ? (string) $qrisRow['duitku_order_id']
+            : '';
+
+        if ($orderId !== '' && duitkuMerchantCode() !== '' && duitkuApiKey() !== '') {
+            $duitkuCheck = duitkuCheckTransactionStatus($orderId);
+            if (is_array($duitkuCheck) && isset($duitkuCheck['statusCode'])) {
+                $statusCode = (string) $duitkuCheck['statusCode'];
+                // Duitku statusCode: '00' = Success, '01' = Pending, '02' = Canceled/Expired
+                if ($statusCode === '00') {
+                    try {
+                        $pdo->beginTransaction();
+                        $lockStmt = $pdo->prepare(
+                            'SELECT id_qris_order, status_pembayaran, tanggal, id_pelanggan, total_belanja, id_transaksi,
+                                    duitku_channel, duitku_va_number, duitku_payment_name,
+                                    duitku_payment_code
+                             FROM tbl_qris_order
+                             WHERE id_qris_order = :id
+                             FOR UPDATE'
+                        );
+                        $lockStmt->execute(['id' => $qrisOrderId]);
+                        $locked = $lockStmt->fetch();
+
+                        if ($locked && $locked['status_pembayaran'] === 'pending') {
+                            $channelInfo = duitkuGetChannelInfo((string) ($locked['duitku_channel'] ?? ''));
+                            $paymentMethodLabel = !empty($locked['duitku_payment_name'])
+                                ? (string) $locked['duitku_payment_name']
+                                : ((($channelInfo['type'] ?? '') === 'qris' || empty($locked['duitku_channel']))
+                                    ? 'qris'
+                                    : ($channelInfo['name'] ?? (string) $locked['duitku_channel']));
+
+                            $insertTx = $pdo->prepare(
+                                'INSERT INTO tbl_transaksi
+                                    (tanggal, id_pelanggan, total_belanja, uang_diterima, saldo_digunakan,
+                                     metode_pembayaran, status_pembayaran, duitku_order_id,
+                                     duitku_reference, duitku_status, duitku_channel, duitku_va_number,
+                                     duitku_payment_name, duitku_payment_code)
+                                 VALUES
+                                    (:tanggal, :id_pelanggan, :total, NULL, 0.00,
+                                     :metode_pembayaran, :status_pembayaran, :order_id,
+                                     :duitku_reference, :duitku_status, :duitku_channel, :duitku_va_number,
+                                     :duitku_payment_name, :duitku_payment_code)'
+                            );
+                            $insertTx->execute([
+                                'tanggal' => $locked['tanggal'],
+                                'id_pelanggan' => $locked['id_pelanggan'],
+                                'total' => $locked['total_belanja'],
+                                'metode_pembayaran' => $paymentMethodLabel,
+                                'status_pembayaran' => 'paid',
+                                'order_id' => $orderId,
+                                'duitku_reference' => $duitkuCheck['reference'] ?? null,
+                                'duitku_status' => 'SUCCESS',
+                                'duitku_channel' => $locked['duitku_channel'] ?? null,
+                                'duitku_va_number' => $locked['duitku_va_number'] ?? null,
+                                'duitku_payment_name' => $locked['duitku_payment_name'] ?? null,
+                                'duitku_payment_code' => $locked['duitku_payment_code'] ?? null,
+                            ]);
+                            $newTxId = (int) $pdo->lastInsertId();
+
+                            $detailStmt = $pdo->prepare(
+                                'SELECT id_produk, jumlah, harga_satuan, diskon, subtotal
+                                 FROM tbl_qris_order_detail
+                                 WHERE id_qris_order = :id_qris_order'
+                            );
+                            $detailStmt->execute(['id_qris_order' => $qrisOrderId]);
+                            $insertDetail = $pdo->prepare(
+                                'INSERT INTO tbl_detail_transaksi
+                                    (id_transaksi, id_produk, jumlah, harga_satuan, diskon, subtotal)
+                                 VALUES (:id_transaksi, :id_produk, :jumlah, :harga_satuan, :diskon, :subtotal)'
+                            );
+                            foreach ($detailStmt->fetchAll() as $item) {
+                                $insertDetail->execute([
+                                    'id_transaksi' => $newTxId,
+                                    'id_produk' => $item['id_produk'],
+                                    'jumlah' => $item['jumlah'],
+                                    'harga_satuan' => $item['harga_satuan'],
+                                    'diskon' => $item['diskon'],
+                                    'subtotal' => $item['subtotal'],
+                                ]);
+                            }
+
+                            $updateOrder = $pdo->prepare(
+                                'UPDATE tbl_qris_order
+                                 SET status_pembayaran = :status_pembayaran,
+                                     id_transaksi = :id_transaksi,
+                                     duitku_reference = COALESCE(:duitku_reference, duitku_reference),
+                                     duitku_status = :duitku_status
+                                 WHERE id_qris_order = :id_qris_order'
+                            );
+                            $updateOrder->execute([
+                                'status_pembayaran' => 'paid',
+                                'id_transaksi' => $newTxId,
+                                'duitku_reference' => $duitkuCheck['reference'] ?? null,
+                                'duitku_status' => 'SUCCESS',
+                                'id_qris_order' => $qrisOrderId,
+                            ]);
+
+                            $pdo->commit();
+                            $paymentStatus = 'paid';
+                        } else {
+                            $pdo->rollBack();
+                            if ($locked) {
+                                $paymentStatus = (string) $locked['status_pembayaran'];
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        if ($pdo->inTransaction()) {
+                            $pdo->rollBack();
+                        }
+                        error_log('Sinkronisasi status Duitku gagal: ' . $e->getMessage());
+                    }
+                } elseif ($statusCode === '02') {
+                    try {
+                        duitkuReleasePendingOrder($pdo, $orderId, 'expired');
+                        $paymentStatus = 'expired';
+                    } catch (Throwable $e) {
+                        error_log('Pelepasan order kedaluwarsa Duitku gagal: ' . $e->getMessage());
+                    }
+                }
+            }
+        }
+    }
+    $receiptUrl = null;
+    if ($paymentStatus === 'paid') {
+        setFlash('success', 'Pembayaran Duitku berhasil diterima.');
+
+        // Ambil id_transaksi terbaru (baru terisi setelah callback/sinkronisasi) untuk mengarahkan ke struk.
+        try {
+            $receiptStatement = $pdo->prepare(
+                'SELECT id_transaksi FROM tbl_qris_order WHERE id_qris_order = :id'
+            );
+            $receiptStatement->execute(['id' => $qrisOrderId]);
+            $paidTransactionId = $receiptStatement->fetchColumn();
+            if ($paidTransactionId !== false && $paidTransactionId !== null) {
+                $receiptUrl = 'index.php?page=struk&id=' . (int) $paidTransactionId;
+            }
+        } catch (PDOException $exception) {
+            error_log('Membaca id transaksi untuk struk gagal: ' . $exception->getMessage());
+        }
+    }
+
+    echo json_encode(['status' => $paymentStatus, 'receipt_url' => $receiptUrl]);
+    exit;
 }
 
 $flash = takeFlash();

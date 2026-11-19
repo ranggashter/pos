@@ -20,6 +20,7 @@ function canAccessPage(string $role, string $page): bool
             'produk',
             'kasir',
             'struk',
+            'kasir_qris',
             'riwayat_transaksi',
             'detail_transaksi',
             'laporan',
@@ -30,9 +31,14 @@ function canAccessPage(string $role, string $page): bool
         return in_array($page, [
             'kasir',
             'struk',
+            'kasir_qris',
             'riwayat_transaksi',
             'detail_transaksi',
         ], true);
+    }
+
+    if ($role === 'pelanggan') {
+        return $page === 'dashboard_pelanggan';
     }
 
     return false;
@@ -40,5 +46,11 @@ function canAccessPage(string $role, string $page): bool
 
 function roleHomePage(string $role): string
 {
-    return $role === 'admin' ? 'laporan' : 'kasir';
+    if ($role === 'admin') {
+        return 'laporan';
+    }
+    if ($role === 'pelanggan') {
+        return 'dashboard_pelanggan';
+    }
+    return 'kasir';
 }
