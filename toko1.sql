@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Nov 19, 2026 at 02:42 AM
+-- Generation Time: Nov 19, 2026 at 06:47 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -18,7 +18,7 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `toko`
+-- Database: `toko1`
 --
 
 DELIMITER $$
@@ -125,7 +125,8 @@ CREATE TABLE `log_pelanggan` (
 INSERT INTO `log_pelanggan` (`id_log`, `aktivitas`, `id_pelanggan`, `waktu`) VALUES
 (1, 'INSERT PELANGGAN', 6, '2026-11-16 01:29:54'),
 (2, 'INSERT PELANGGAN', 7, '2026-11-16 01:37:49'),
-(3, 'INSERT PELANGGAN', 8, '2026-11-16 01:39:49');
+(3, 'INSERT PELANGGAN', 8, '2026-11-16 01:39:49'),
+(4, 'INSERT PELANGGAN', 9, '2026-11-19 03:34:37');
 
 -- --------------------------------------------------------
 
@@ -147,7 +148,10 @@ CREATE TABLE `log_perubahan_pelanggan` (
 
 INSERT INTO `log_perubahan_pelanggan` (`id_log`, `id_pelanggan`, `nama_lama`, `nama_baru`, `waktu`) VALUES
 (1, 4, 'Dewi', 'Rina Wijaya', '2026-11-16 01:30:25'),
-(2, 4, 'Rina Wijaya', 'Dewi Lestari', '2026-11-16 01:39:53');
+(2, 4, 'Rina Wijaya', 'Dewi Lestari', '2026-11-16 01:39:53'),
+(3, 9, 'rangga', 'rangga', '2026-11-19 03:35:03'),
+(4, 9, 'rangga', 'rangga', '2026-11-19 04:43:21'),
+(5, 9, 'rangga', 'rangga', '2026-11-19 04:43:30');
 
 -- --------------------------------------------------------
 
@@ -163,6 +167,25 @@ CREATE TABLE `log_transaksi` (
   `keterangan` varchar(255) DEFAULT NULL,
   `waktu` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `log_transaksi`
+--
+
+INSERT INTO `log_transaksi` (`id_log`, `id_transaksi`, `id_detail`, `aktivitas`, `keterangan`, `waktu`) VALUES
+(1, 5, 1, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 02:38:52'),
+(2, 6, 2, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 02:41:30'),
+(3, 7, 3, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 03:29:34'),
+(4, 8, 4, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 03:29:54'),
+(5, 9, 5, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=110110.50', '2026-11-19 03:35:03'),
+(6, 10, 6, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=110110.50', '2026-11-19 03:35:26'),
+(7, 11, 7, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 04:08:20'),
+(8, 12, 8, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 04:20:14'),
+(9, 13, 9, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 04:22:53'),
+(10, 14, 10, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 04:27:52'),
+(11, 15, 11, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 04:28:29'),
+(12, 16, 12, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=1.000, subtotal=122345.00', '2026-11-19 04:35:40'),
+(13, 17, 13, 'DETAIL_DITAMBAHKAN', 'Produk ID=1, jumlah=7.000, subtotal=856415.00', '2026-11-19 04:44:02');
 
 -- --------------------------------------------------------
 
@@ -199,7 +222,26 @@ CREATE TABLE `tbl_detail_transaksi` (
   `harga_satuan` decimal(12,2) NOT NULL,
   `diskon` decimal(12,2) NOT NULL DEFAULT 0.00,
   `subtotal` decimal(12,2) NOT NULL
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `tbl_detail_transaksi`
+--
+
+INSERT INTO `tbl_detail_transaksi` (`id_detail`, `id_transaksi`, `id_produk`, `jumlah`, `harga_satuan`, `diskon`, `subtotal`) VALUES
+(1, 5, 1, 1.000, 122345.00, 0.00, 122345.00),
+(2, 6, 1, 1.000, 122345.00, 0.00, 122345.00),
+(3, 7, 1, 1.000, 122345.00, 0.00, 122345.00),
+(4, 8, 1, 1.000, 122345.00, 0.00, 122345.00),
+(5, 9, 1, 1.000, 122345.00, 12234.50, 110110.50),
+(6, 10, 1, 1.000, 122345.00, 12234.50, 110110.50),
+(7, 11, 1, 1.000, 122345.00, 0.00, 122345.00),
+(8, 12, 1, 1.000, 122345.00, 0.00, 122345.00),
+(9, 13, 1, 1.000, 122345.00, 0.00, 122345.00),
+(10, 14, 1, 1.000, 122345.00, 0.00, 122345.00),
+(11, 15, 1, 1.000, 122345.00, 0.00, 122345.00),
+(12, 16, 1, 1.000, 122345.00, 0.00, 122345.00),
+(13, 17, 1, 7.000, 122345.00, 0.00, 856415.00);
 
 --
 -- Triggers `tbl_detail_transaksi`
@@ -268,6 +310,8 @@ INSERT INTO `tbl_kategori` (`id_kategori`, `nama_kategori`, `keterangan`, `statu
 CREATE TABLE `tbl_pelanggan` (
   `id_pelanggan` int(11) NOT NULL,
   `nama_pelanggan` varchar(100) DEFAULT NULL,
+  `username` varchar(50) DEFAULT NULL,
+  `password_hash` varchar(255) DEFAULT NULL,
   `kota` varchar(50) DEFAULT NULL,
   `rfid_uid` varchar(64) DEFAULT NULL,
   `diskon_persen` decimal(5,2) NOT NULL DEFAULT 0.00,
@@ -278,15 +322,16 @@ CREATE TABLE `tbl_pelanggan` (
 -- Dumping data for table `tbl_pelanggan`
 --
 
-INSERT INTO `tbl_pelanggan` (`id_pelanggan`, `nama_pelanggan`, `kota`, `rfid_uid`, `diskon_persen`, `saldo`) VALUES
-(1, 'Andi', 'Ponorogo', NULL, 0.00, 0.00),
-(2, 'Budi', 'Madiun', NULL, 0.00, 0.00),
-(3, 'Citra', 'Surabaya', NULL, 0.00, 0.00),
-(4, 'Dewi Lestari', 'Ponorogo', NULL, 0.00, 0.00),
-(5, 'Dewi', 'Ponorogo', NULL, 0.00, 0.00),
-(6, 'Rina', 'Ponorogo', NULL, 0.00, 0.00),
-(7, 'Siti', 'Ponorogo', NULL, 0.00, 0.00),
-(8, 'Sinta', 'Madiun', NULL, 0.00, 0.00);
+INSERT INTO `tbl_pelanggan` (`id_pelanggan`, `nama_pelanggan`, `username`, `password_hash`, `kota`, `rfid_uid`, `diskon_persen`, `saldo`) VALUES
+(1, 'Andi', NULL, NULL, 'Ponorogo', NULL, 0.00, 0.00),
+(2, 'Budi', NULL, NULL, 'Madiun', NULL, 0.00, 0.00),
+(3, 'Citra', NULL, NULL, 'Surabaya', NULL, 0.00, 0.00),
+(4, 'Dewi Lestari', NULL, NULL, 'Ponorogo', NULL, 0.00, 0.00),
+(5, 'Dewi', NULL, NULL, 'Ponorogo', NULL, 0.00, 0.00),
+(6, 'Rina', NULL, NULL, 'Ponorogo', NULL, 0.00, 0.00),
+(7, 'Siti', NULL, NULL, 'Ponorogo', NULL, 0.00, 0.00),
+(8, 'Sinta', NULL, NULL, 'Madiun', NULL, 0.00, 0.00),
+(9, 'rangga', 'rangga', '$2y$10$91e75jp8P2oPBgzZTXTmkuhHw8m2JKhtj0nphwIO8qoi/HCpHpod.', 'Ponorogo', NULL, 10.00, 889889.50);
 
 --
 -- Triggers `tbl_pelanggan`
@@ -327,8 +372,8 @@ CREATE TABLE `tbl_pengguna` (
 --
 
 INSERT INTO `tbl_pengguna` (`id_pengguna`, `nama_pengguna`, `username`, `password_hash`, `peran`, `status_aktif`, `dibuat_pada`) VALUES
-(1, 'Administrator', 'admin', '$2y$10$oUrf7ViL9BHw9NqFWWrP6u7Vr9TTPmUXFrKOJUuzlQGkn/r6YQYaK', 'admin', 1, '2026-11-19 01:34:43'),
-(2, 'Kasir Toko', 'kasir', '$2y$10$j4/kBa1L3eQ6v/h1Ou0XxeRaK/Qiq1mvBmVyNCriWicdA.kfZuybK', 'kasir', 1, '2026-11-19 01:34:43');
+(1, 'Administrator', 'admin', '$2y$10$3KbmQTC1ojmZi/gJIt88TuhuT78nmFZjS.$2y$10$ksmLKK6SD9nJ/xDsgceDzuBCzoQC.OYVuCKlXHJSMMgW9AeOrvlie', 'admin', 1, '2026-11-19 01:34:43'),
+(2, 'Kasir Toko', 'kasir', '$2y$10$MWR2P.tVY7zbOaxQwerTLuKAYeitLUPpyihjc.KA4YMtBGzOR.0v.', 'kasir', 1, '2026-11-19 01:34:43');
 
 -- --------------------------------------------------------
 
@@ -347,14 +392,14 @@ CREATE TABLE `tbl_produk` (
   `keterangan` varchar(255) DEFAULT NULL,
   `status_aktif` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `tbl_produk`
 --
 
 INSERT INTO `tbl_produk` (`id_produk`, `id_kategori`, `kode_produk`, `nama_produk`, `harga`, `stok`, `satuan`, `keterangan`, `status_aktif`, `created_at`) VALUES
-(1, 1, NULL, '3e', 122345.00, 64.000, 'pcs', 'QW', 1, '2026-11-19 01:41:18');
+(1, 1, NULL, '3e', 122345.00, 44.000, 'pcs', 'QW', 1, '2026-11-19 01:41:18');
 
 -- --------------------------------------------------------
 
@@ -385,14 +430,23 @@ CREATE TABLE `tbl_qris_order` (
   `midtrans_status` varchar(30) DEFAULT NULL,
   `id_transaksi` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `tbl_qris_order`
 --
 
-INSERT INTO `tbl_qris_order` (`id_qris_order`, `midtrans_order_id`, `tanggal`, `id_pelanggan`, `total_belanja`, `status_pembayaran`, `midtrans_redirect_url`, `midtrans_qr_url`, `midtrans_transaction_id`, `midtrans_status`, `id_transaksi`, `created_at`) VALUES
-(1, 'TK-20261119024133-bba953090e81', '2026-11-19', NULL, 122345.00, 'pending', NULL, 'https://api.sandbox.midtrans.com/v2/qris/d71d5ed5-9b71-41fd-99d4-e828ff328985/qr-code', 'd71d5ed5-9b71-41fd-99d4-e828ff328985', NULL, NULL, '2026-11-19 01:41:33');
+INSERT INTO `tbl_qris_order` (`id_qris_order`, `duitku_order_id`, `midtrans_order_id`, `tanggal`, `id_pelanggan`, `total_belanja`, `status_pembayaran`, `duitku_reference`, `duitku_payment_url`, `duitku_qr_string`, `duitku_qr_url`, `duitku_status`, `duitku_channel`, `duitku_va_number`, `duitku_payment_name`, `duitku_payment_code`, `midtrans_redirect_url`, `midtrans_qr_url`, `midtrans_transaction_id`, `midtrans_status`, `id_transaksi`, `created_at`) VALUES
+(1, 'TK-20261119024133-bba953090e81', 'TK-20261119024133-bba953090e81', '2026-11-19', NULL, 122345.00, 'pending', 'd71d5ed5-9b71-41fd-99d4-e828ff328985', NULL, NULL, 'https://api.sandbox.midtrans.com/v2/qris/d71d5ed5-9b71-41fd-99d4-e828ff328985/qr-code', NULL, NULL, NULL, NULL, NULL, NULL, 'https://api.sandbox.midtrans.com/v2/qris/d71d5ed5-9b71-41fd-99d4-e828ff328985/qr-code', 'd71d5ed5-9b71-41fd-99d4-e828ff328985', NULL, NULL, '2026-11-19 01:41:33'),
+(2, 'TK-20261119033826-8d626af598c5', NULL, '2026-11-19', NULL, 122345.00, 'paid', 'DS38194262VOA5304ATTTKCE', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SP26MOVWQDUFO5PGWBW', '00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB. BANGKA BAR610533315622205181684566640366921086304F010', 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB.%20BANGKA%20BAR610533315622205181684566640366921086304F010', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL, NULL, 5, '2026-11-19 02:38:26'),
+(3, 'TK-20261119033910-d0afb7a79639', NULL, '2026-11-19', NULL, 122345.00, 'pending', 'DS3819426FJ5EGVAXW5KQMJF', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SA26HLH8MXA20EBTSBB', NULL, NULL, NULL, 'SA', NULL, 'ShopeePay App', NULL, NULL, NULL, NULL, NULL, NULL, '2026-11-19 02:39:10'),
+(4, 'TK-20261119034108-1f1caef847f1', NULL, '2026-11-19', NULL, 122345.00, 'paid', 'DS3819426X1ELK3KIAIIDD8M', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=BC268R1Y152L4H775HG', NULL, NULL, 'SUCCESS', 'BC', '7007014005419796', 'BCA Virtual Account', NULL, NULL, NULL, NULL, NULL, 6, '2026-11-19 02:41:08'),
+(5, 'TK-20261119042901-885435c90c41', NULL, '2026-11-19', NULL, 122345.00, 'paid', 'DS3819426E67WFAW7AICM1UA', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SP264JNPRVXQR3ZU87I', '00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB. BANGKA BAR61053331562220518120700046384225283630467E0', 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB.%20BANGKA%20BAR61053331562220518120700046384225283630467E0', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL, NULL, 7, '2026-11-19 03:29:01'),
+(6, 'TK-20261119050753-b2955bc7846d', NULL, '2026-11-19', NULL, 122345.00, 'paid', 'DS3819426DMDMKMFRP6U0PHQ', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SP267YF7WOLLVV0KARJ', '00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB. BANGKA BAR610533315622205181699775221659111696304F817', 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB.%20BANGKA%20BAR610533315622205181699775221659111696304F817', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL, NULL, 11, '2026-11-19 04:07:53'),
+(7, 'TK-20261119051947-6d14b1da8c24', NULL, '2026-11-19', 2, 122345.00, 'paid', 'DS38194265PWZHP55JD1HCAF', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SP265JQOXP16X7N60B8', '00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB. BANGKA BAR610533315622205181023310680120040526304BF52', 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB.%20BANGKA%20BAR610533315622205181023310680120040526304BF52', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL, NULL, 12, '2026-11-19 04:19:47'),
+(8, 'TK-20261119052233-7f50e9414fa0', NULL, '2026-11-19', NULL, 122345.00, 'paid', 'DS3819426JHLK14G455F4FWI', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SP26NBMAKVEEHG8S6ZC', '00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB. BANGKA BAR6105333156222051815342895322393958963048B19', 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB.%20BANGKA%20BAR6105333156222051815342895322393958963048B19', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL, NULL, 13, '2026-11-19 04:22:33'),
+(9, 'TK-20261119052803-6fd7340c2bab', NULL, '2026-11-19', NULL, 122345.00, 'paid', 'DS3819426LS5EW107MHFW4NC', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SP26780A4OKU37R1K8G', '00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB. BANGKA BAR610533315622205181445217584545908266304DE6E', 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB.%20BANGKA%20BAR610533315622205181445217584545908266304DE6E', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL, NULL, 15, '2026-11-19 04:28:03'),
+(10, 'TK-20261119053516-d18d4d595907', NULL, '2026-11-19', NULL, 122345.00, 'paid', 'DS3819426A8BLB5FMLBBOKZ7', 'https://sandbox.duitku.com/topup/topupdirectv2.aspx?ref=SP26KWBXP7EHWMTO0LR', '00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB. BANGKA BAR6105333156222051812321198518208503163046AF1', 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=00020101021226610016ID.CO.SHOPEE.WWW01189360091800202688450208202688450303UKE5204798853033605409122345.005802ID5906Duitku6015KAB.%20BANGKA%20BAR6105333156222051812321198518208503163046AF1', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL, NULL, 16, '2026-11-19 04:35:16');
 
 -- --------------------------------------------------------
 
@@ -408,14 +462,23 @@ CREATE TABLE `tbl_qris_order_detail` (
   `harga_satuan` decimal(12,2) NOT NULL,
   `diskon` decimal(12,2) NOT NULL DEFAULT 0.00,
   `subtotal` decimal(12,2) NOT NULL
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `tbl_qris_order_detail`
 --
 
 INSERT INTO `tbl_qris_order_detail` (`id_qris_detail`, `id_qris_order`, `id_produk`, `jumlah`, `harga_satuan`, `diskon`, `subtotal`) VALUES
-(1, 1, 1, 1.000, 122345.00, 0.00, 122345.00);
+(1, 1, 1, 1.000, 122345.00, 0.00, 122345.00),
+(2, 2, 1, 1.000, 122345.00, 0.00, 122345.00),
+(3, 3, 1, 1.000, 122345.00, 0.00, 122345.00),
+(4, 4, 1, 1.000, 122345.00, 0.00, 122345.00),
+(5, 5, 1, 1.000, 122345.00, 0.00, 122345.00),
+(6, 6, 1, 1.000, 122345.00, 0.00, 122345.00),
+(7, 7, 1, 1.000, 122345.00, 0.00, 122345.00),
+(8, 8, 1, 1.000, 122345.00, 0.00, 122345.00),
+(9, 9, 1, 1.000, 122345.00, 0.00, 122345.00),
+(10, 10, 1, 1.000, 122345.00, 0.00, 122345.00);
 
 -- --------------------------------------------------------
 
@@ -448,11 +511,24 @@ CREATE TABLE `tbl_transaksi` (
 -- Dumping data for table `tbl_transaksi`
 --
 
-INSERT INTO `tbl_transaksi` (`id_transaksi`, `tanggal`, `id_pelanggan`, `total_belanja`, `uang_diterima`, `saldo_digunakan`, `metode_pembayaran`, `status_pembayaran`, `midtrans_order_id`, `midtrans_transaction_id`, `midtrans_status`) VALUES
-(1, '2026-10-01', 1, 250000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL),
-(2, '2026-10-02', 2, 350000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL),
-(3, '2026-10-03', 1, 150000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL),
-(4, '2026-10-04', 3, 500000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL);
+INSERT INTO `tbl_transaksi` (`id_transaksi`, `tanggal`, `id_pelanggan`, `total_belanja`, `uang_diterima`, `saldo_digunakan`, `metode_pembayaran`, `status_pembayaran`, `duitku_order_id`, `duitku_reference`, `duitku_status`, `duitku_channel`, `duitku_va_number`, `duitku_payment_name`, `duitku_payment_code`, `midtrans_order_id`, `midtrans_transaction_id`, `midtrans_status`) VALUES
+(1, '2026-10-01', 1, 250000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(2, '2026-10-02', 2, 350000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(3, '2026-10-03', 1, 150000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(4, '2026-10-04', 3, 500000.00, NULL, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(5, '2026-11-19', NULL, 122345.00, NULL, 0.00, 'QRIS (Semua E-Wallet & M-Banking)', 'paid', 'TK-20261119033826-8d626af598c5', 'DS38194262VOA5304ATTTKCE', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL),
+(6, '2026-11-19', NULL, 122345.00, NULL, 0.00, 'BCA Virtual Account', 'paid', 'TK-20261119034108-1f1caef847f1', 'DS3819426X1ELK3KIAIIDD8M', 'SUCCESS', 'BC', '7007014005419796', 'BCA Virtual Account', NULL, NULL, NULL, NULL),
+(7, '2026-11-19', NULL, 122345.00, NULL, 0.00, 'QRIS (Semua E-Wallet & M-Banking)', 'paid', 'TK-20261119042901-885435c90c41', 'DS3819426E67WFAW7AICM1UA', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL),
+(8, '2026-11-19', NULL, 122345.00, 200000.00, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(9, '2026-11-19', 9, 110110.50, NULL, 110110.50, 'member', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(10, '2026-11-19', 9, 110110.50, 120000.00, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(11, '2026-11-19', NULL, 122345.00, NULL, 0.00, 'QRIS (Semua E-Wallet & M-Banking)', 'paid', 'TK-20261119050753-b2955bc7846d', 'DS3819426DMDMKMFRP6U0PHQ', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL),
+(12, '2026-11-19', 2, 122345.00, NULL, 0.00, 'QRIS (Semua E-Wallet & M-Banking)', 'paid', 'TK-20261119051947-6d14b1da8c24', 'DS38194265PWZHP55JD1HCAF', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL),
+(13, '2026-11-19', NULL, 122345.00, NULL, 0.00, 'QRIS (Semua E-Wallet & M-Banking)', 'paid', 'TK-20261119052233-7f50e9414fa0', 'DS3819426JHLK14G455F4FWI', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL),
+(14, '2026-11-19', NULL, 122345.00, 200000.00, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(15, '2026-11-19', NULL, 122345.00, NULL, 0.00, 'QRIS (Semua E-Wallet & M-Banking)', 'paid', 'TK-20261119052803-6fd7340c2bab', 'DS3819426LS5EW107MHFW4NC', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL),
+(16, '2026-11-19', NULL, 122345.00, NULL, 0.00, 'QRIS (Semua E-Wallet & M-Banking)', 'paid', 'TK-20261119053516-d18d4d595907', 'DS3819426A8BLB5FMLBBOKZ7', 'SUCCESS', 'SP', NULL, 'QRIS (Semua E-Wallet & M-Banking)', NULL, NULL, NULL, NULL),
+(17, '2026-11-19', 9, 856415.00, 856415.00, 0.00, 'tunai', 'paid', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 --
 -- Triggers `tbl_transaksi`
@@ -638,19 +714,19 @@ ALTER TABLE `tbl_transaksi`
 -- AUTO_INCREMENT for table `log_pelanggan`
 --
 ALTER TABLE `log_pelanggan`
-  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `log_perubahan_pelanggan`
 --
 ALTER TABLE `log_perubahan_pelanggan`
-  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `log_transaksi`
 --
 ALTER TABLE `log_transaksi`
-  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `tbl_cabang`
@@ -662,7 +738,7 @@ ALTER TABLE `tbl_cabang`
 -- AUTO_INCREMENT for table `tbl_detail_transaksi`
 --
 ALTER TABLE `tbl_detail_transaksi`
-  MODIFY `id_detail` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_detail` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `tbl_kategori`
@@ -680,25 +756,25 @@ ALTER TABLE `tbl_pelanggan`
 -- AUTO_INCREMENT for table `tbl_pengguna`
 --
 ALTER TABLE `tbl_pengguna`
-  MODIFY `id_pengguna` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id_pengguna` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `tbl_produk`
 --
 ALTER TABLE `tbl_produk`
-  MODIFY `id_produk` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_produk` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `tbl_qris_order`
 --
 ALTER TABLE `tbl_qris_order`
-  MODIFY `id_qris_order` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_qris_order` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `tbl_qris_order_detail`
 --
 ALTER TABLE `tbl_qris_order_detail`
-  MODIFY `id_qris_detail` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_qris_detail` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `tbl_transaksi`
